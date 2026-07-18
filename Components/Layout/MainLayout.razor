@@ -1,0 +1,132 @@
+@inherits LayoutComponentBase
+@inject IHostelSettingsReader SettingsReader
+@inject IHostelRepository Repository
+
+<div class="app-shell" style="--blue: @PrimaryColor; --blue-dark: @PrimaryColor; --orange: @AccentColor;">
+    <header class="public-header @(mobileMenuOpen ? "menu-open" : null)">
+        <a class="brand" href="/">
+            @if (!string.IsNullOrWhiteSpace(settings?.LogoImageUrl))
+            {
+                <img class="brand-logo" src="@settings.LogoImageUrl" alt="" />
+            }
+            else
+            {
+                <PropertyBrandMark PropertyModel="@PropertyModel" ResidentCategory="@ResidentCategory" />
+            }
+            <span class="brand-copy"><b>@HostelName</b><small>@PropertyLabel</small></span>
+        </a>
+
+        <button class="public-menu-button" type="button" aria-label="Toggle navigation" aria-expanded="@mobileMenuOpen" @onclick="ToggleMobileMenu">
+            @if (mobileMenuOpen)
+            {
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
+            }
+            else
+            {
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" /></svg>
+            }
+        </button>
+
+        <nav class="public-nav" aria-label="Primary navigation">
+            <NavLink href="/" Match="NavLinkMatch.All" @onclick="CloseMobileMenu">Home</NavLink>
+            <NavLink href="/rooms" @onclick="CloseMobileMenu">Rooms</NavLink>
+            <NavLink href="/gallery" @onclick="CloseMobileMenu">Gallery</NavLink>
+            <NavLink href="/about" @onclick="CloseMobileMenu">About</NavLink>
+            <NavLink href="/contact" @onclick="CloseMobileMenu">Contact</NavLink>
+            <NavLink href="/apply" @onclick="CloseMobileMenu">Apply</NavLink>
+        </nav>
+
+        <div class="header-actions">
+            <AuthorizeView>
+                <Authorized>
+                    <AuthorizeView Roles="@AppRoles.User" Context="tenantAuth">
+                        <Authorized>
+                            <a class="button outline compact" href="/portal">Resident Portal</a>
+                        </Authorized>
+                    </AuthorizeView>
+                    <AuthorizeView Roles="@AppRoles.Admin" Context="adminAuth">
+                        <Authorized>
+                            <a class="button primary compact" href="/admin/Dashboard">Dashboard</a>
+                        </Authorized>
+                    </AuthorizeView>
+                    <form method="post" action="/account/logout">
+                        <AntiforgeryToken />
+                        <button class="button outline compact" type="submit">Logout</button>
+                    </form>
+                </Authorized>
+                <NotAuthorized>
+                    <a class="button primary compact" href="/Login">Sign In</a>
+                </NotAuthorized>
+            </AuthorizeView>
+        </div>
+    </header>
+
+    <main>
+        @Body
+    </main>
+
+    <footer class="site-footer">
+        <div class="footer-grid">
+            <div>
+                <a class="brand footer-brand" href="/">
+                    <PropertyBrandMark PropertyModel="@PropertyModel" ResidentCategory="@ResidentCategory" CssClass="footer-mark" />
+                    <span>@HostelName</span>
+                </a>
+                <p>@FooterDescription</p>
+            </div>
+            <div>
+                <h3>Quick Links</h3>
+                <a href="/">Home</a>
+                <a href="/rooms">Rooms</a>
+                <a href="/gallery">Gallery</a>
+                <a href="/about">About</a>
+                <a href="/contact">Contact</a>
+                <a href="/apply">Apply</a>
+            </div>
+            <div>
+                <h3>Amenities</h3>
+                @foreach (var amenity in amenities.Take(5))
+                {
+                    <p>@amenity.Name</p>
+                }
+            </div>
+            <div>
+                <h3>Contact</h3>
+                <p>@ContactPhone</p>
+                <p>@ContactEmail</p>
+                <p>@ContactAddress</p>
+            </div>
+        </div>
+        <div class="footer-bottom">© @DateTime.Today.Year @HostelName. All rights reserved.</div>
+    </footer>
+</div>
+
+@code {
+    private bool mobileMenuOpen;
+    private HostelSetting? settings;
+    private List<Amenity> amenities = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        settings = await SettingsReader.GetSettingsAsync();
+        amenities = await Repository.GetAmenitiesAsync(publishedOnly: true);
+    }
+
+    private void ToggleMobileMenu() => mobileMenuOpen = !mobileMenuOpen;
+
+    private void CloseMobileMenu() => mobileMenuOpen = false;
+
+    private string HostelName => ValueOrDefault(settings?.HostelName, "HostelPro");
+    private string ContactPhone => ValueOrDefault(settings?.ContactPhone, "Phone not configured");
+    private string ContactEmail => ValueOrDefault(settings?.ContactEmail, "Email not configured");
+    private string ContactAddress => ValueOrDefault(settings?.Address, "Address not configured");
+    private string FooterDescription => ValueOrDefault(settings?.FooterDescription, settings?.Tagline ?? "Comfortable accommodation, managed professionally.");
+    private string PrimaryColor => ValueOrDefault(settings?.PrimaryColor, "#263f95");
+    private string AccentColor => ValueOrDefault(settings?.AccentColor, "#e57942");
+    private string PropertyModel => settings?.PropertyModel ?? "pg";
+    private string ResidentCategory => settings?.ResidentCategory ?? "mixed";
+    private string PropertyLabel => $"{(ResidentCategory == "men" ? "Men's" : ResidentCategory == "women" ? "Women's" : "Mixed")} {(PropertyModel == "co_living" ? "Co-living" : "PG")}";
+
+    private static string ValueOrDefault(string? value, string fallback) =>
+        string.IsNullOrWhiteSpace(value) ? fallback : value.Trim();
+}

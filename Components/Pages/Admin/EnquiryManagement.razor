@@ -1,0 +1,92 @@
+@page "/admin/EnquiryManagement"
+@layout AdminLayout
+@attribute [Authorize(Roles = AppRoles.Admin)]
+@inject IHostelRepository Repository
+@inject AuthenticationStateProvider AuthStateProvider
+
+<DynamicPageTitle Prefix="Enquiry Management" />
+
+<div class="admin-page-title">
+    <div>
+        <h1>Enquiries</h1>
+        <p>Manage incoming enquiries from the website</p>
+    </div>
+</div>
+
+<div class="admin-filter-row compact-row">
+    <select class="search-input" @bind="statusFilter">
+        <option value="all">All Status</option>
+        <option value="new">New</option>
+        <option value="replied">Replied</option>
+        <option value="resolved">Resolved</option>
+    </select>
+</div>
+
+@if (!FilteredEnquiries.Any())
+{
+    <div class="admin-empty">
+        <span class="empty-icon chat-icon" aria-hidden="true"></span>
+        <p>No enquiries yet.</p>
+    </div>
+}
+else
+{
+    <div class="grid cards">
+        @foreach (var enquiry in FilteredEnquiries)
+        {
+            <article class="admin-panel enquiry-card">
+                <div class="room-card-top">
+                    <div>
+                        <h2>@enquiry.Name</h2>
+                        <p class="muted">@enquiry.Email · @enquiry.Phone</p>
+                    </div>
+                    <span class="badge @StatusBadge(enquiry.Status)">@enquiry.Status</span>
+                </div>
+                <p>@enquiry.Message</p>
+                <p class="muted">@enquiry.CreatedUtc.ToString("dd MMM yyyy HH:mm") UTC</p>
+                <div class="actions">
+                    <button class="button outline compact" @onclick="() => MarkRepliedAsync(enquiry.Id)">Mark replied</button>
+                    <button class="button primary compact" @onclick="() => ResolveAsync(enquiry.Id)">Resolve</button>
+                </div>
+            </article>
+        }
+    </div>
+}
+
+@code {
+    private List<Enquiry> enquiries = [];
+    private string statusFilter = "all";
+
+    private IEnumerable<Enquiry> FilteredEnquiries => statusFilter == "all"
+        ? enquiries
+        : enquiries.Where(enquiry => enquiry.Status == statusFilter);
+
+    protected override async Task OnInitializedAsync()
+    {
+        enquiries = await Repository.GetEnquiriesAsync();
+    }
+
+    private Task MarkRepliedAsync(Guid id) => UpdateAsync(id, "replied");
+
+    private Task ResolveAsync(Guid id) => UpdateAsync(id, "resolved");
+
+    private async Task UpdateAsync(Guid id, string status)
+    {
+        await Repository.UpdateEnquiryStatusAsync(id, status, await ActorAsync());
+        enquiries = await Repository.GetEnquiriesAsync();
+    }
+
+    private static string StatusBadge(string status) => status switch
+    {
+        "new" => "warning",
+        "replied" => "neutral",
+        "resolved" => "success",
+        _ => "neutral"
+    };
+
+    private async Task<string> ActorAsync()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        return state.User.Identity?.Name ?? "admin";
+    }
+}

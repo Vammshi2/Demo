@@ -1,0 +1,20 @@
+@inject IHostelSettingsReader SettingsReader
+
+@if (!string.IsNullOrWhiteSpace(title))
+{
+    <PageTitle>@title</PageTitle>
+}
+
+@code {
+    [Parameter, EditorRequired]
+    public string Prefix { get; set; } = string.Empty;
+
+    private string title = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var settings = await SettingsReader.GetSettingsAsync();
+        var propertyName = string.IsNullOrWhiteSpace(settings.HostelName) ? "Accommodation" : settings.HostelName;
+        title = string.IsNullOrWhiteSpace(Prefix) ? propertyName : $"{Prefix} | {propertyName}";
+    }
+}

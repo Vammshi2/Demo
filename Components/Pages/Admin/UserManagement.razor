@@ -1,0 +1,151 @@
+@page "/admin/ResidentAccounts"
+@layout AdminLayout
+@attribute [Authorize(Roles = AppRoles.Admin)]
+@inject UserManager<ApplicationUser> UserManager
+@inject IHostelRepository Repository
+@inject AuthenticationStateProvider AuthStateProvider
+
+<DynamicPageTitle Prefix="Resident Accounts" />
+
+<div class="admin-page-title with-action">
+    <div><h1>Resident Accounts</h1><p>Manage local sign-in accounts linked to hostel tenants</p></div>
+    <button class="button primary compact" type="button" @onclick="OpenCreate">Add Account</button>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(message))
+{
+    <div class="alert @(hasError ? "danger" : "success") compact-alert">@message</div>
+}
+
+@if (showEditor)
+{
+    <EditForm Model="form" OnValidSubmit="SaveAsync" FormName="account-editor">
+        <DataAnnotationsValidator />
+        <section class="admin-panel content-editor">
+            <div class="panel-title-row"><h2>@(form.Id is null ? "New account" : "Edit account")</h2><button class="icon-button" type="button" title="Close" @onclick="CloseEditor">×</button></div>
+            <div class="form-grid two">
+                <div class="field"><label>Full name</label><InputText @bind-Value="form.FullName" /><ValidationMessage For="() => form.FullName" /></div>
+                <div class="field"><label>Email</label><InputText type="email" @bind-Value="form.Email" disabled="@(form.Id is not null)" /><ValidationMessage For="() => form.Email" /></div>
+                <div class="field"><label>Phone</label><InputText @bind-Value="form.Phone" /></div>
+                <div class="field"><label>Account type</label><InputSelect @bind-Value="form.Role"><option value="@AppRoles.User">Resident</option><option value="@AppRoles.Admin">Administrator</option></InputSelect></div>
+                <div class="field"><label>Linked tenant</label><InputSelect @bind-Value="form.TenantId"><option value="">Not linked</option>@foreach (var tenant in tenants.Where(item => item.Status == "active")){<option value="@tenant.Id">@tenant.FullName · Room @tenant.Room?.RoomNumber</option>}</InputSelect></div>
+                <div class="field"><label>@(form.Id is null ? "Temporary password" : "New password (optional)")</label><InputText type="password" autocomplete="new-password" @bind-Value="form.TemporaryPassword" /><ValidationMessage For="() => form.TemporaryPassword" /></div>
+            </div>
+            <label class="checkbox-row muted"><InputCheckbox @bind-Value="form.IsActive" /> Account can sign in</label>
+            <div class="form-actions"><button class="button primary compact" type="submit">Save Account</button><button class="button outline compact" type="button" @onclick="CloseEditor">Cancel</button></div>
+        </section>
+    </EditForm>
+}
+
+<section class="admin-panel table-wrap">
+    <table class="admin-table">
+        <thead><tr><th>User</th><th>Type</th><th>Tenant link</th><th>Last sign in</th><th>Status</th><th></th></tr></thead>
+        <tbody>
+            @foreach (var account in accounts)
+            {
+                <tr>
+                    <td><strong>@account.User.FullName</strong><span class="table-subtext">@account.User.Email</span></td>
+                    <td>@(account.Role == AppRoles.Admin ? "Administrator" : "Resident")</td>
+                    <td>@TenantLabel(account.User.TenantId)</td>
+                    <td>@(account.User.LastLoginUtc?.ToLocalTime().ToString("dd MMM yyyy, HH:mm") ?? "Never")</td>
+                    <td><span class="status-badge @(account.User.IsActive ? "success" : "muted-badge")">@(account.User.IsActive ? "Active" : "Disabled")</span></td>
+                    <td class="table-actions"><button class="button outline compact" type="button" @onclick="() => Edit(account)">Edit</button></td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</section>
+
+@code {
+    private sealed record AccountRow(ApplicationUser User, string Role);
+    private List<AccountRow> accounts = [];
+    private List<Tenant> tenants = [];
+    private UserAccountForm form = new();
+    private bool showEditor;
+    private bool hasError;
+    private string message = string.Empty;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        tenants = await Repository.GetTenantsAsync();
+        var users = UserManager.Users.OrderBy(user => user.FullName).ToList();
+        accounts = [];
+        foreach (var user in users)
+        {
+            var roles = await UserManager.GetRolesAsync(user);
+            accounts.Add(new AccountRow(user, roles.FirstOrDefault() ?? AppRoles.User));
+        }
+    }
+
+    private void OpenCreate() { form = new UserAccountForm { Role = AppRoles.User, IsActive = true }; showEditor = true; message = string.Empty; }
+    private void CloseEditor() => showEditor = false;
+
+    private void Edit(AccountRow account)
+    {
+        form = new UserAccountForm { Id = account.User.Id, FullName = account.User.FullName, Email = account.User.Email ?? string.Empty, Phone = account.User.PhoneNumber ?? string.Empty, TenantId = account.User.TenantId, Role = account.Role, IsActive = account.User.IsActive };
+        showEditor = true;
+        message = string.Empty;
+    }
+
+    private async Task SaveAsync()
+    {
+        hasError = false;
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        var currentUserId = UserManager.GetUserId(state.User);
+        if (form.TenantId.HasValue && UserManager.Users.Any(user => user.TenantId == form.TenantId && user.Id != form.Id))
+        {
+            hasError = true; message = "That tenant is already linked to another account."; return;
+        }
+
+        if (form.Id == currentUserId && (form.Role != AppRoles.Admin || !form.IsActive))
+        {
+            hasError = true; message = "You cannot disable or remove administrator access from the account you are currently using."; return;
+        }
+
+        IdentityResult result;
+        ApplicationUser user;
+        if (form.Id is null)
+        {
+            if (string.IsNullOrWhiteSpace(form.TemporaryPassword))
+            {
+                hasError = true; message = "A temporary password is required for a new account."; return;
+            }
+            user = new ApplicationUser { UserName = form.Email.Trim(), Email = form.Email.Trim(), FullName = form.FullName.Trim(), PhoneNumber = form.Phone.Trim(), TenantId = form.TenantId, IsActive = form.IsActive, EmailConfirmed = true };
+            result = await UserManager.CreateAsync(user, form.TemporaryPassword);
+            if (result.Succeeded) result = await UserManager.AddToRoleAsync(user, form.Role);
+        }
+        else
+        {
+            user = await UserManager.FindByIdAsync(form.Id) ?? throw new InvalidOperationException("Account not found.");
+            user.FullName = form.FullName.Trim(); user.PhoneNumber = form.Phone.Trim(); user.TenantId = form.TenantId; user.IsActive = form.IsActive;
+            result = await UserManager.UpdateAsync(user);
+            if (result.Succeeded)
+            {
+                var currentRoles = await UserManager.GetRolesAsync(user);
+                if (!currentRoles.Contains(form.Role))
+                {
+                    if (currentRoles.Count > 0) result = await UserManager.RemoveFromRolesAsync(user, currentRoles);
+                    if (result.Succeeded) result = await UserManager.AddToRoleAsync(user, form.Role);
+                }
+            }
+            if (result.Succeeded && !string.IsNullOrWhiteSpace(form.TemporaryPassword))
+            {
+                var token = await UserManager.GeneratePasswordResetTokenAsync(user);
+                result = await UserManager.ResetPasswordAsync(user, token, form.TemporaryPassword);
+            }
+        }
+
+        if (!result.Succeeded)
+        {
+            hasError = true; message = string.Join(" ", result.Errors.Select(error => error.Description)); return;
+        }
+
+        message = "Account saved successfully.";
+        showEditor = false;
+        await LoadAsync();
+    }
+
+    private string TenantLabel(Guid? tenantId) => tenantId.HasValue ? tenants.FirstOrDefault(tenant => tenant.Id == tenantId)?.FullName ?? "Linked tenant" : "Not linked";
+}

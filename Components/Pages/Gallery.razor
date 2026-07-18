@@ -1,0 +1,38 @@
+@page "/gallery"
+@inject IHostelRepository Repository
+
+<DynamicPageTitle Prefix="Gallery" />
+
+<section class="section page-section">
+    <div class="section-title">
+        <p class="eyebrow orange">GALLERY</p>
+        <h1>Our Facilities</h1>
+        <p>Take a virtual tour of our premium PG accommodation.</p>
+    </div>
+
+    @if (images.Count == 0)
+    {
+        <div class="empty-state" style="text-align: center; padding: 4rem 2rem;">
+            <span class="empty-icon image-icon" aria-hidden="true" style="font-size: 3rem; color: #ccc;">🖼</span>
+            <p>No gallery images have been published yet.</p>
+        </div>
+    }
+    else
+    {
+        <div class="facility-grid">
+            @foreach (var image in images)
+            {
+                <img src="@image.ImageUrl" alt="@image.Caption" title="@image.Album" />
+            }
+        </div>
+    }
+</section>
+
+@code {
+    private List<GalleryImage> images = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        images = await Repository.GetGalleryAsync(publishedOnly: true);
+    }
+}

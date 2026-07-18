@@ -1,0 +1,61 @@
+@page "/about"
+@inject IHostelRepository Repository
+@inject IHostelSettingsReader SettingsReader
+
+<PageTitle>About | @HostelName</PageTitle>
+
+<section class="section page-section">
+    <div class="section-title">
+        <p class="eyebrow orange">ABOUT US</p>
+        <h1>About @HostelName</h1>
+        <p>@AboutDescription</p>
+    </div>
+
+    <div class="about-stats">
+        <article>
+            <span>♙</span>
+            <strong>@stats.ActiveTenants</strong>
+            <p>Happy Tenants</p>
+        </article>
+        <article>
+            <span>☆</span>
+            <strong>@stats.TotalRooms</strong>
+            <p>Managed Rooms</p>
+        </article>
+        <article>
+            <span>♢</span>
+            <strong>@YearsExperience+</strong>
+            <p>Years Experience</p>
+        </article>
+    </div>
+
+    <article class="rules-card">
+        <h2>Hostel Rules & Guidelines</h2>
+        <div class="rules-grid">
+            @for (var i = 0; i < Rules.Count; i++)
+            {
+                var number = i + 1;
+                <div class="rule-item">
+                    <span>@number</span>
+                    <p>@Rules[i]</p>
+                </div>
+            }
+        </div>
+    </article>
+</section>
+
+@code {
+    private HostelSetting? settings;
+    private DashboardStats stats = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        settings = await SettingsReader.GetSettingsAsync();
+        stats = await Repository.GetDashboardStatsAsync();
+    }
+
+    private string HostelName => string.IsNullOrWhiteSpace(settings?.HostelName) ? "Our PG" : settings.HostelName.Trim();
+    private string AboutDescription => string.IsNullOrWhiteSpace(settings?.AboutDescription) ? "Comfortable accommodation with responsive, professional management." : settings.AboutDescription.Trim();
+    private int YearsExperience => Math.Max(1, DateTime.Today.Year - (settings?.FoundedYear ?? DateTime.Today.Year) + 1);
+    private List<string> Rules => (settings?.HostelRules ?? string.Empty).Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+}

@@ -1,0 +1,364 @@
+@page "/portal"
+@attribute [Authorize(Roles = AppRoles.User)]
+@inject IHostelRepository Repository
+@inject AuthenticationStateProvider AuthStateProvider
+@inject UserManager<ApplicationUser> UserManager
+@inject IKycFileStorage KycFileStorage
+
+<DynamicPageTitle Prefix="Resident Portal" />
+
+<section class="section tenant-portal">
+    <div class="section-heading left">
+        <span>Tenant Portal</span>
+        <h1>My Stay</h1>
+        <p>View bills, receipts, KYC status, maintenance tickets, and mess preferences.</p>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(notice))
+    {
+        <div class="alert success">@notice</div>
+    }
+    @if (!string.IsNullOrWhiteSpace(uploadError))
+    {
+        <div class="alert danger">@uploadError</div>
+    }
+
+    @if (tenant is null)
+    {
+        <div class="empty-state">
+            <h2>Tenant profile not found</h2>
+            <p>Your login email must match the email saved in Tenant Management. Ask the admin to add or update your tenant profile.</p>
+        </div>
+    }
+    else
+    {
+        <div class="portal-grid">
+            <article class="portal-profile admin-panel">
+                <div class="portal-profile-head">
+                    <span class="metric-icon blue users-icon" aria-hidden="true"></span>
+                    <div>
+                        <h2>@tenant.FullName</h2>
+                        <p>Room @tenant.Room?.RoomNumber · Bed @(tenant.Bed?.BedNumber ?? "-")</p>
+                    </div>
+                </div>
+                <dl class="profile-list">
+                    <div><dt>Email</dt><dd>@tenant.Email</dd></div>
+                    <div><dt>Phone</dt><dd>@tenant.Phone</dd></div>
+                    <div><dt>Rent</dt><dd>₹@tenant.MonthlyRent.ToString("N0") / month</dd></div>
+                    <div><dt>KYC</dt><dd><span class="badge @KycBadge(tenant.KycStatus)">@Label(tenant.KycStatus)</span></dd></div>
+                </dl>
+            </article>
+
+            <article class="admin-panel">
+                <h2>Billing Summary</h2>
+                <div class="portal-summary">
+                    <div><span>Total Due</span><strong>₹@TotalDue.ToString("N0")</strong></div>
+                    <div><span>Total Paid</span><strong>₹@payments.Sum(payment => payment.PaymentAmount).ToString("N0")</strong></div>
+                    <div><span>Open Bills</span><strong>@PendingBills.Count</strong></div>
+                </div>
+            </article>
+        </div>
+
+        <div class="portal-grid two">
+            <article class="admin-panel">
+                <h2>My Bills</h2>
+                <ReportTable>
+                    <Header>
+                        <tr><th>Invoice</th><th>Month</th><th>Total</th><th>Paid</th><th>Due</th><th>Status</th></tr>
+                    </Header>
+                    <Rows>
+                        @foreach (var bill in bills.Take(8))
+                        {
+                            <tr>
+                                <td>@(string.IsNullOrWhiteSpace(bill.InvoiceNumber) ? "-" : bill.InvoiceNumber)</td>
+                                <td>@bill.BillMonth @bill.BillYear</td>
+                                <td>₹@bill.TotalAmount.ToString("N0")</td>
+                                <td>₹@bill.PaidAmount.ToString("N0")</td>
+                                <td>@bill.DueDate.ToString("dd MMM")</td>
+                                <td><span class="badge @BillBadge(bill.Status)">@Label(bill.Status)</span></td>
+                            </tr>
+                        }
+                    </Rows>
+                </ReportTable>
+            </article>
+
+            <article class="admin-panel">
+                <h2>Receipts</h2>
+                <ReportTable>
+                    <Header>
+                        <tr><th>Receipt</th><th>Amount</th><th>Method</th><th>Date</th></tr>
+                    </Header>
+                    <Rows>
+                        @foreach (var payment in payments.Take(8))
+                        {
+                            <tr>
+                                <td>@payment.ReceiptNumber</td>
+                                <td>₹@payment.PaymentAmount.ToString("N0")</td>
+                                <td>@Label(payment.PaymentMethod)</td>
+                                <td>@payment.CreatedUtc.ToString("dd MMM yyyy")</td>
+                            </tr>
+                        }
+                    </Rows>
+                </ReportTable>
+            </article>
+        </div>
+
+        <div class="portal-grid two">
+            <article class="admin-panel">
+                <h2>KYC Documents</h2>
+                <EditForm Model="documentForm" OnValidSubmit="UploadDocumentAsync" FormName="tenant-kyc-upload">
+                    <DataAnnotationsValidator />
+                    <div class="form-grid">
+                        <div class="field">
+                            <label>Document type</label>
+                            <InputSelect @bind-Value="documentForm.DocumentType">
+                                <option value="Aadhaar">Aadhaar</option>
+                                <option value="Passport">Passport</option>
+                                <option value="PAN">PAN</option>
+                                <option value="Rental Agreement">Rental Agreement</option>
+                                <option value="Digital Signature">Digital Signature</option>
+                                <option value="Other">Other</option>
+                            </InputSelect>
+                        </div>
+                        <div class="field">
+                            <label>Secure file upload</label>
+                            <InputFile OnChange="HandleDocumentUpload" />
+                        </div>
+                        <button class="button primary compact" type="submit">Upload document</button>
+                    </div>
+                </EditForm>
+                <div class="document-list">
+                    @foreach (var document in documents)
+                    {
+                        <div>
+                            <strong>@document.DocumentType</strong>
+                            <span class="badge @KycBadge(document.Status)">@Label(document.Status)</span>
+                        </div>
+                    }
+                </div>
+            </article>
+
+            <article class="admin-panel">
+                <h2>Maintenance Request</h2>
+                <EditForm Model="ticketForm" OnValidSubmit="CreateTicketAsync" FormName="tenant-maintenance-ticket">
+                    <DataAnnotationsValidator />
+                    <div class="form-grid">
+                        <div class="field">
+                            <label>Issue title</label>
+                            <InputText @bind-Value="ticketForm.Title" />
+                            <ValidationMessage For="() => ticketForm.Title" />
+                        </div>
+                        <div class="field">
+                            <label>Priority</label>
+                            <InputSelect @bind-Value="ticketForm.Priority">
+                                <option value="low">Low</option>
+                                <option value="medium">Medium</option>
+                                <option value="high">High</option>
+                                <option value="urgent">Urgent</option>
+                            </InputSelect>
+                        </div>
+                        <div class="field">
+                            <label>Description</label>
+                            <InputTextArea @bind-Value="ticketForm.Description" />
+                            <ValidationMessage For="() => ticketForm.Description" />
+                        </div>
+                        <button class="button primary compact" type="submit">Submit ticket</button>
+                    </div>
+                </EditForm>
+                <div class="document-list">
+                    @foreach (var ticket in tickets.Take(5))
+                    {
+                        <div>
+                            <strong>@ticket.Title</strong>
+                            <span class="badge @TicketBadge(ticket.Status)">@Label(ticket.Status)</span>
+                        </div>
+                    }
+                </div>
+            </article>
+        </div>
+
+        <article class="admin-panel">
+            <h2>Mess Preferences</h2>
+            @if (menus.Count == 0)
+            {
+                <div class="admin-empty compact"><p>No menus planned yet.</p></div>
+            }
+            else
+            {
+                <div class="menu-grid compact">
+                    @foreach (var menu in menus)
+                    {
+                        var status = MealStatus(menu);
+                        <article class="menu-card compact-card">
+                            <div class="menu-card-head">
+                                <div>
+                                    <span class="eyebrow">@menu.MenuDate.ToString("ddd, dd MMM")</span>
+                                    <h3>@Label(menu.MealType)</h3>
+                                </div>
+                                <span class="badge @(status == "opt_out" ? "warning" : status == "opt_in" ? "success" : "neutral")">@Label(status)</span>
+                            </div>
+                            <p>@menu.MenuItems</p>
+                            <div class="actions">
+                                <button class="button outline compact" @onclick='() => SetMealAsync(menu, "opt_in")'>Opt in</button>
+                                <button class="button outline compact" @onclick='() => SetMealAsync(menu, "opt_out")'>Opt out</button>
+                            </div>
+                        </article>
+                    }
+                </div>
+            }
+        </article>
+    }
+</section>
+
+@code {
+    private HostelSetting? settings;
+    private Tenant? tenant;
+    private List<Bill> bills = [];
+    private List<Payment> payments = [];
+    private List<TenantDocument> documents = [];
+    private List<MaintenanceTicket> tickets = [];
+    private List<MessMenu> menus = [];
+    private List<MessAttendance> attendances = [];
+    private TenantDocumentForm documentForm = new();
+    private MaintenanceTicketForm ticketForm = new();
+    private string? notice;
+    private string? uploadError;
+    private string userEmail = string.Empty;
+
+    private List<Bill> PendingBills => bills
+        .Where(bill => bill.Status is "pending" or "overdue" or "partially_paid")
+        .ToList();
+
+    private decimal TotalDue => PendingBills.Sum(bill => Math.Max(bill.TotalAmount - bill.PaidAmount, 0));
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        userEmail = state.User.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value
+            ?? state.User.Identity?.Name
+            ?? string.Empty;
+
+        settings = await Repository.GetSettingsAsync();
+        var user = await UserManager.GetUserAsync(state.User);
+        tenant = user?.TenantId is Guid tenantId
+            ? await Repository.GetTenantAsync(tenantId)
+            : string.IsNullOrWhiteSpace(userEmail)
+                ? null
+                : await Repository.GetTenantByEmailAsync(userEmail);
+
+        if (tenant is not null)
+        {
+            await ReloadTenantDataAsync();
+        }
+    }
+
+    private async Task ReloadTenantDataAsync()
+    {
+        if (tenant is null)
+        {
+            return;
+        }
+
+        bills = await Repository.GetTenantBillsAsync(tenant.Id);
+        payments = await Repository.GetTenantPaymentsAsync(tenant.Id);
+        documents = await Repository.GetTenantDocumentsAsync(tenant.Id);
+        tickets = await Repository.GetMaintenanceTicketsAsync(tenant.Id);
+        var from = DateOnly.FromDateTime(DateTime.Today);
+        var to = DateOnly.FromDateTime(DateTime.Today.AddDays(7));
+        menus = await Repository.GetMessMenusAsync(from, to);
+        attendances = await Repository.GetMessAttendancesAsync(tenant.Id, from, to);
+    }
+
+    private async Task HandleDocumentUpload(InputFileChangeEventArgs e)
+    {
+        uploadError = null;
+        try
+        {
+            documentForm.FileUrl = await KycFileStorage.SaveAsync(e.File);
+        }
+        catch (InvalidDataException exception)
+        {
+            documentForm.FileUrl = string.Empty;
+            uploadError = exception.Message;
+        }
+    }
+
+    private async Task UploadDocumentAsync()
+    {
+        if (tenant is null || string.IsNullOrWhiteSpace(documentForm.FileUrl))
+        {
+            return;
+        }
+
+        documentForm.TenantId = tenant.Id;
+        documentForm.Status = "pending";
+        await Repository.SaveTenantDocumentAsync(documentForm, userEmail);
+        notice = "Document uploaded securely for admin review.";
+        documentForm = new TenantDocumentForm();
+        tenant = await Repository.GetTenantAsync(tenant.Id);
+        await ReloadTenantDataAsync();
+    }
+
+    private async Task CreateTicketAsync()
+    {
+        if (tenant is null)
+        {
+            return;
+        }
+
+        ticketForm.TenantId = tenant.Id;
+        ticketForm.RoomId = tenant.RoomId;
+        ticketForm.Status = "open";
+        await Repository.SaveMaintenanceTicketAsync(ticketForm, userEmail);
+        notice = "Maintenance ticket submitted.";
+        ticketForm = new MaintenanceTicketForm();
+        await ReloadTenantDataAsync();
+    }
+
+    private async Task SetMealAsync(MessMenu menu, string status)
+    {
+        if (tenant is null)
+        {
+            return;
+        }
+
+        await Repository.SaveMessAttendanceAsync(new MessAttendanceForm
+        {
+            TenantId = tenant.Id,
+            MealDate = menu.MenuDate,
+            MealType = menu.MealType,
+            Status = status
+        }, userEmail);
+        notice = "Mess preference updated.";
+        await ReloadTenantDataAsync();
+    }
+
+    private string MealStatus(MessMenu menu) =>
+        attendances.FirstOrDefault(attendance => attendance.MealDate == menu.MenuDate && attendance.MealType == menu.MealType)?.Status ?? "not_set";
+
+    private static string Label(string value) => value.Replace("_", " ");
+
+    private static string BillBadge(string status) => status switch
+    {
+        "paid" => "success",
+        "partially_paid" => "warning",
+        "overdue" => "danger",
+        _ => "neutral"
+    };
+
+    private static string KycBadge(string status) => status switch
+    {
+        "approved" => "success",
+        "in_review" => "warning",
+        "rejected" => "danger",
+        _ => "neutral"
+    };
+
+    private static string TicketBadge(string status) => status switch
+    {
+        "completed" => "success",
+        "in_progress" => "warning",
+        "cancelled" => "neutral",
+        _ => "danger"
+    };
+}

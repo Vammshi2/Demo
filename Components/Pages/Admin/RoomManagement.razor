@@ -1,0 +1,252 @@
+@page "/admin/RoomManagement"
+@layout AdminLayout
+@attribute [Authorize(Roles = AppRoles.Admin)]
+@inject IHostelRepository Repository
+@inject AuthenticationStateProvider AuthStateProvider
+@inject ILogger<RoomManagement> Logger
+@inject IPublicImageStorage ImageStorage
+
+<DynamicPageTitle Prefix="Room Management" />
+
+<div class="admin-page-title with-action">
+    <div>
+        <h1>Room Management</h1>
+        <p>Manage all rooms in your hostel</p>
+    </div>
+    <button class="button primary compact" @onclick="StartCreate"><span aria-hidden="true">＋</span> Add Room</button>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(saveError))
+{
+    <div class="alert danger">@saveError</div>
+}
+
+@if (showForm)
+{
+    <EditForm Model="form" OnValidSubmit="SaveAsync" FormName="room-management">
+        <DataAnnotationsValidator />
+        <div class="admin-panel form-grid admin-form-panel">
+            <div class="form-grid two">
+                <div class="field">
+                    <label>Room number</label>
+                    <InputText @bind-Value="form.RoomNumber" />
+                    <ValidationMessage For="() => form.RoomNumber" />
+                </div>
+                <div class="field">
+                    <label>Floor number</label>
+                    <InputText @bind-Value="form.FloorNumber" />
+                    <ValidationMessage For="() => form.FloorNumber" />
+                </div>
+            </div>
+            <div class="form-grid two">
+                <div class="field">
+                    <label>Room type</label>
+                    <InputSelect @bind-Value="form.RoomType">
+                        <option value="single">Single</option>
+                        <option value="double">Double</option>
+                        <option value="triple">Triple</option>
+                    </InputSelect>
+                </div>
+                <div class="field">
+                    <label>Status</label>
+                    <InputSelect @bind-Value="form.Status">
+                        <option value="active">Active</option>
+                        <option value="maintenance">Maintenance</option>
+                        <option value="inactive">Inactive</option>
+                    </InputSelect>
+                </div>
+            </div>
+            <div class="form-grid two">
+                <div class="field">
+                    <label>Total beds</label>
+                    <InputNumber @bind-Value="form.TotalBeds" />
+                    <ValidationMessage For="() => form.TotalBeds" />
+                </div>
+                <div class="field">
+                    <label>Monthly rent</label>
+                    <InputNumber @bind-Value="form.MonthlyRent" />
+                    <ValidationMessage For="() => form.MonthlyRent" />
+                </div>
+            </div>
+            <div class="field">
+                <label>Amenities</label>
+                <InputText @bind-Value="form.Amenities" />
+            </div>
+            <div class="field">
+                <label>Cover image</label>
+                <InputFile OnChange="HandleImageUpload" accept="image/*" />
+                @if (!string.IsNullOrEmpty(form.CoverImageUrl))
+                {
+                    <div style="margin-top: 10px;">
+                        <img src="@form.CoverImageUrl" alt="Cover Preview" style="max-height: 100px; border-radius: 4px;" />
+                    </div>
+                }
+            </div>
+            <div class="field">
+                <label>Description</label>
+                <InputTextArea @bind-Value="form.Description" />
+            </div>
+            <div class="actions">
+                <button class="button primary" type="submit" disabled="@isSaving">
+                    @(isSaving ? "Saving..." : "Save room")
+                </button>
+                <button class="button outline" type="button" @onclick="Cancel">Cancel</button>
+            </div>
+        </div>
+    </EditForm>
+}
+
+@if (rooms.Count == 0)
+{
+    <div class="admin-empty">
+        <span class="empty-icon building-icon" aria-hidden="true"></span>
+        <p>No rooms found. Add rooms to start managing occupancy.</p>
+    </div>
+}
+else
+{
+    <div class="admin-room-grid">
+        @foreach (var room in rooms)
+        {
+            var available = Math.Max(room.TotalBeds - room.OccupiedBeds, 0);
+            <article class="admin-room-card">
+                <div class="room-card-top">
+                    <div>
+                        <h2>Room @room.RoomNumber</h2>
+                        <p>Floor @room.FloorNumber · @RoomTypeLabel(room.RoomType)</p>
+                    </div>
+                    <span class="badge @StatusBadge(room.Status)">@room.Status</span>
+                </div>
+                <div class="room-card-stats">
+                    <div><span>Total Beds</span><strong>@room.TotalBeds</strong></div>
+                    <div><span>Available</span><strong>@available</strong></div>
+                </div>
+                <p class="room-price"><strong>₹@room.MonthlyRent.ToString("N0")</strong><span>/bed/mo</span></p>
+                <div class="admin-card-actions">
+                    <button class="admin-card-button" @onclick="() => StartEdit(room)">✎ Edit</button>
+                    <button class="icon-danger-button" title="Delete room" @onclick="() => DeleteAsync(room.Id)">⌫</button>
+                </div>
+            </article>
+        }
+    </div>
+}
+
+@code {
+    private List<Room> rooms = [];
+    private RoomForm form = new();
+    private bool showForm;
+    private bool isSaving;
+    private string? saveError;
+    [Inject] private IWebHostEnvironment Environment { get; set; } = default!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        rooms = await Repository.GetRoomsAsync();
+    }
+
+    private void StartCreate()
+    {
+        form = new RoomForm();
+        saveError = null;
+        showForm = true;
+    }
+
+    private void StartEdit(Room room)
+    {
+        form = new RoomForm
+        {
+            Id = room.Id,
+            RoomNumber = room.RoomNumber,
+            FloorNumber = room.FloorNumber,
+            RoomType = room.RoomType,
+            TotalBeds = room.TotalBeds,
+            MonthlyRent = room.MonthlyRent,
+            Status = room.Status,
+            Amenities = room.Amenities,
+            Description = room.Description,
+            CoverImageUrl = room.CoverImageUrl
+        };
+        saveError = null;
+        showForm = true;
+    }
+
+    private void Cancel()
+    {
+        form = new RoomForm();
+        saveError = null;
+        showForm = false;
+    }
+
+    private async Task SaveAsync()
+    {
+        if (isSaving)
+        {
+            return;
+        }
+
+        isSaving = true;
+        saveError = null;
+
+        try
+        {
+            await Repository.SaveRoomAsync(form, await ActorAsync());
+            form = new RoomForm();
+            showForm = false;
+            StateHasChanged();
+
+            rooms = await Repository.GetRoomsAsync();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to save room {RoomNumber}", form.RoomNumber);
+            saveError = "Room could not be saved. Please check the details and try again.";
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+
+    private async Task HandleImageUpload(InputFileChangeEventArgs e)
+    {
+        saveError = null;
+        try
+        {
+            form.CoverImageUrl = await ImageStorage.SaveAsync(e.File, "rooms");
+        }
+        catch (InvalidDataException exception)
+        {
+            form.CoverImageUrl = string.Empty;
+            saveError = exception.Message;
+        }
+    }
+
+    private async Task DeleteAsync(Guid id)
+    {
+        await Repository.DeleteRoomAsync(id, await ActorAsync());
+        rooms = await Repository.GetRoomsAsync();
+    }
+
+    private static string StatusBadge(string status) => status switch
+    {
+        "active" => "success",
+        "maintenance" => "warning",
+        "inactive" => "neutral",
+        _ => "neutral"
+    };
+
+    private static string RoomTypeLabel(string roomType) => roomType switch
+    {
+        "single" => "single",
+        "double" => "double",
+        "triple" => "triple",
+        "dormitory" => "dormitory",
+        _ => roomType
+    };
+
+    private async Task<string> ActorAsync()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        return state.User.Identity?.Name ?? "admin";
+    }
+}

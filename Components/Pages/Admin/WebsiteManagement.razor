@@ -1,0 +1,123 @@
+@page "/admin/Website"
+@layout AdminLayout
+@attribute [Authorize(Roles = AppRoles.Admin)]
+@inject IHostelRepository Repository
+@inject AuthenticationStateProvider AuthStateProvider
+
+<DynamicPageTitle Prefix="Website Content" />
+
+<div class="admin-page-title with-action">
+    <div>
+        <h1>Website Content</h1>
+        <p>Manage the amenities and resident stories shown on the public website</p>
+    </div>
+    <div class="actions">
+        <button class="button outline compact" type="button" @onclick="OpenAmenity">Add Amenity</button>
+        <button class="button primary compact" type="button" @onclick="OpenTestimonial">Add Testimonial</button>
+    </div>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(message))
+{
+    <div class="alert success compact-alert">@message</div>
+}
+
+@if (editingAmenity)
+{
+    <EditForm Model="amenityForm" OnValidSubmit="SaveAmenityAsync" FormName="amenity-content">
+        <DataAnnotationsValidator />
+        <section class="admin-panel content-editor">
+            <div class="panel-title-row"><h2>@(amenityForm.Id.HasValue ? "Edit amenity" : "New amenity")</h2><button class="icon-button" type="button" title="Close" @onclick="CloseEditors">×</button></div>
+            <div class="form-grid two">
+                <div class="field"><label>Name</label><InputText @bind-Value="amenityForm.Name" /><ValidationMessage For="() => amenityForm.Name" /></div>
+                <div class="field"><label>Icon</label><InputSelect @bind-Value="amenityForm.IconKey"><option value="shield">Security</option><option value="wifi">Wi-Fi</option><option value="food">Food</option><option value="water">Water</option><option value="power">Power</option><option value="parking">Parking</option><option value="laundry">Laundry</option><option value="housekeeping">Housekeeping</option></InputSelect></div>
+            </div>
+            <div class="field"><label>Description</label><InputTextArea @bind-Value="amenityForm.Description" /><ValidationMessage For="() => amenityForm.Description" /></div>
+            <div class="form-grid two"><div class="field"><label>Display order</label><InputNumber @bind-Value="amenityForm.SortOrder" /></div><label class="checkbox-row muted"><InputCheckbox @bind-Value="amenityForm.IsPublished" /> Visible on website</label></div>
+            <div class="form-actions"><button class="button primary compact" type="submit">Save Amenity</button><button class="button outline compact" type="button" @onclick="CloseEditors">Cancel</button></div>
+        </section>
+    </EditForm>
+}
+
+@if (editingTestimonial)
+{
+    <EditForm Model="testimonialForm" OnValidSubmit="SaveTestimonialAsync" FormName="testimonial-content">
+        <DataAnnotationsValidator />
+        <section class="admin-panel content-editor">
+            <div class="panel-title-row"><h2>@(testimonialForm.Id.HasValue ? "Edit testimonial" : "New testimonial")</h2><button class="icon-button" type="button" title="Close" @onclick="CloseEditors">×</button></div>
+            <div class="form-grid two"><div class="field"><label>Resident name</label><InputText @bind-Value="testimonialForm.Name" /><ValidationMessage For="() => testimonialForm.Name" /></div><div class="field"><label>Role or description</label><InputText @bind-Value="testimonialForm.Role" /></div></div>
+            <div class="field"><label>Testimonial</label><InputTextArea @bind-Value="testimonialForm.Quote" /><ValidationMessage For="() => testimonialForm.Quote" /></div>
+            <div class="form-grid two"><div class="field"><label>Rating</label><InputNumber @bind-Value="testimonialForm.Rating" /></div><div class="field"><label>Display order</label><InputNumber @bind-Value="testimonialForm.SortOrder" /></div></div>
+            <label class="checkbox-row muted"><InputCheckbox @bind-Value="testimonialForm.IsPublished" /> Visible on website</label>
+            <div class="form-actions"><button class="button primary compact" type="submit">Save Testimonial</button><button class="button outline compact" type="button" @onclick="CloseEditors">Cancel</button></div>
+        </section>
+    </EditForm>
+}
+
+<div class="website-content-grid">
+    <section class="admin-panel">
+        <div class="panel-title-row"><div><h2>Amenities</h2><p>@amenities.Count item(s)</p></div></div>
+        <div class="content-list">
+            @foreach (var item in amenities)
+            {
+                <article class="content-list-item">
+                    <span class="content-item-icon marketing-icon @IconClass(item.IconKey)" aria-hidden="true"></span>
+                    <div><strong>@item.Name</strong><p>@item.Description</p><small>@(item.IsPublished ? "Published" : "Hidden") · Order @item.SortOrder</small></div>
+                    <div class="content-item-actions"><button class="icon-button" title="Edit" @onclick="() => EditAmenity(item)">✎</button>@if (pendingAmenityDelete == item.Id){<button class="button danger compact" @onclick="() => DeleteAmenityAsync(item.Id)">Confirm</button>}else{<button class="icon-button danger-text" title="Delete" @onclick="() => pendingAmenityDelete = item.Id">×</button>}</div>
+                </article>
+            }
+        </div>
+    </section>
+
+    <section class="admin-panel">
+        <div class="panel-title-row"><div><h2>Testimonials</h2><p>@testimonials.Count item(s)</p></div></div>
+        <div class="content-list">
+            @if (testimonials.Count == 0)
+            {
+                <div class="mini-empty">No testimonials published yet.</div>
+            }
+            @foreach (var item in testimonials)
+            {
+                <article class="content-list-item testimonial-list-item">
+                    <span class="content-avatar">@InitialFor(item.Name)</span>
+                    <div><strong>@item.Name</strong><p>“@item.Quote”</p><small>@item.Rating/5 · @(item.IsPublished ? "Published" : "Hidden")</small></div>
+                    <div class="content-item-actions"><button class="icon-button" title="Edit" @onclick="() => EditTestimonial(item)">✎</button>@if (pendingTestimonialDelete == item.Id){<button class="button danger compact" @onclick="() => DeleteTestimonialAsync(item.Id)">Confirm</button>}else{<button class="icon-button danger-text" title="Delete" @onclick="() => pendingTestimonialDelete = item.Id">×</button>}</div>
+                </article>
+            }
+        </div>
+    </section>
+</div>
+
+@code {
+    private List<Amenity> amenities = [];
+    private List<Testimonial> testimonials = [];
+    private AmenityForm amenityForm = new();
+    private TestimonialForm testimonialForm = new();
+    private bool editingAmenity;
+    private bool editingTestimonial;
+    private Guid? pendingAmenityDelete;
+    private Guid? pendingTestimonialDelete;
+    private string message = string.Empty;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        amenities = await Repository.GetAmenitiesAsync();
+        testimonials = await Repository.GetTestimonialsAsync();
+    }
+
+    private void OpenAmenity() { CloseEditors(); amenityForm = new AmenityForm { SortOrder = amenities.Count + 1 }; editingAmenity = true; }
+    private void OpenTestimonial() { CloseEditors(); testimonialForm = new TestimonialForm { SortOrder = testimonials.Count + 1 }; editingTestimonial = true; }
+    private void CloseEditors() { editingAmenity = false; editingTestimonial = false; pendingAmenityDelete = null; pendingTestimonialDelete = null; }
+    private void EditAmenity(Amenity item) { CloseEditors(); amenityForm = new AmenityForm { Id = item.Id, Name = item.Name, Description = item.Description, IconKey = item.IconKey, SortOrder = item.SortOrder, IsPublished = item.IsPublished }; editingAmenity = true; }
+    private void EditTestimonial(Testimonial item) { CloseEditors(); testimonialForm = new TestimonialForm { Id = item.Id, Name = item.Name, Role = item.Role, Quote = item.Quote, Rating = item.Rating, SortOrder = item.SortOrder, IsPublished = item.IsPublished }; editingTestimonial = true; }
+
+    private async Task SaveAmenityAsync() { await Repository.SaveAmenityAsync(amenityForm, await ActorAsync()); message = "Amenity saved."; CloseEditors(); await LoadAsync(); }
+    private async Task SaveTestimonialAsync() { await Repository.SaveTestimonialAsync(testimonialForm, await ActorAsync()); message = "Testimonial saved."; CloseEditors(); await LoadAsync(); }
+    private async Task DeleteAmenityAsync(Guid id) { await Repository.DeleteAmenityAsync(id, await ActorAsync()); message = "Amenity deleted."; await LoadAsync(); pendingAmenityDelete = null; }
+    private async Task DeleteTestimonialAsync(Guid id) { await Repository.DeleteTestimonialAsync(id, await ActorAsync()); message = "Testimonial deleted."; await LoadAsync(); pendingTestimonialDelete = null; }
+    private async Task<string> ActorAsync() { var state = await AuthStateProvider.GetAuthenticationStateAsync(); return state.User.Identity?.Name ?? "admin"; }
+    private static string InitialFor(string name) => string.IsNullOrWhiteSpace(name) ? "R" : name.Trim()[..1].ToUpperInvariant();
+    private static string IconClass(string iconKey) => iconKey switch { "wifi" => "wifi-icon", "food" => "utensils-icon", "water" => "water-icon", "power" => "power-icon", "parking" => "parking-icon", "laundry" => "laundry-icon", "housekeeping" => "housekeeping-icon", _ => "shield-icon" };
+}

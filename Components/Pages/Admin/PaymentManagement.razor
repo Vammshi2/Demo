@@ -1,0 +1,285 @@
+@page "/admin/PaymentManagement"
+@layout AdminLayout
+@attribute [Authorize(Roles = AppRoles.Admin)]
+@inject IHostelRepository Repository
+@inject IPaymentQrService QrService
+@inject IEmailNotificationService EmailNotifications
+@inject AuthenticationStateProvider AuthStateProvider
+@inject NavigationManager Navigation
+
+<DynamicPageTitle Prefix="Payment Management" />
+
+<div class="admin-page-title with-action">
+    <div>
+        <h1>Payment Management</h1>
+        <p>Record and track all payments</p>
+    </div>
+    <button class="button primary compact" @onclick="() => showForm = true"><span aria-hidden="true">＋</span> Record Payment</button>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(error))
+{
+    <div class="alert danger">@error</div>
+}
+
+@if (!string.IsNullOrWhiteSpace(generatedUrl))
+{
+    <div class="admin-panel generated-link-panel">
+        <div><strong>Payment link created</strong><p>Share this URL with the resident. It is shown only now and expires in seven days.</p></div>
+        <input class="search-input" readonly value="@generatedUrl" aria-label="Generated payment link" />
+        <a class="button outline compact" href="@generatedUrl" target="_blank">Open link</a>
+    </div>
+}
+
+@if (!string.IsNullOrWhiteSpace(successMessage))
+{
+    <div class="alert success">@successMessage</div>
+}
+
+@if (settings?.PaymentTestMode == true)
+{
+    <div class="alert warning">Test mode is active. New payment records will not change invoice balances or collected revenue.</div>
+}
+
+@if (showForm)
+{
+    <EditForm Model="form" OnValidSubmit="SaveAsync" FormName="payment-management">
+        <DataAnnotationsValidator />
+        <div class="admin-panel form-grid admin-form-panel">
+            <div class="field">
+                <label>Bill</label>
+                <InputSelect @bind-Value="form.BillId">
+                    <option value="@Guid.Empty">Select pending bill</option>
+                    @foreach (var bill in bills.Where(bill => bill.Status != "paid"))
+                    {
+                        <option value="@bill.Id">@bill.Tenant?.FullName · ₹@bill.TotalAmount.ToString("N0") · @bill.BillMonth</option>
+                    }
+                </InputSelect>
+            </div>
+            <div class="form-grid two">
+                <div class="field">
+                    <label>Amount</label>
+                    <InputNumber @bind-Value="form.PaymentAmount" />
+                    <ValidationMessage For="() => form.PaymentAmount" />
+                </div>
+                <div class="field">
+                    <label>Method</label>
+                    <InputSelect @bind-Value="form.PaymentMethod">
+                        <option value="upi">UPI</option>
+                        <option value="cash">Cash</option>
+                        <option value="bank_transfer">Bank Transfer</option>
+                    </InputSelect>
+                </div>
+            </div>
+            <div class="field">
+                <label>Transaction ID / cash reference</label>
+                <InputText @bind-Value="form.TransactionId" />
+                <ValidationMessage For="() => form.TransactionId" />
+            </div>
+            @if (SelectedBill is not null && !string.IsNullOrWhiteSpace(settings?.UpiId))
+            {
+                <div class="admin-panel qr-panel">
+                    <h3>UPI QR</h3>
+                    <img src="@QrUri" alt="UPI QR code for selected bill" style="width: 180px; height: 180px;" />
+                </div>
+            }
+            <div class="actions">
+                <button class="button primary" type="submit">Save payment</button>
+                <button class="button outline" type="button" @onclick="Cancel">Cancel</button>
+            </div>
+        </div>
+    </EditForm>
+}
+
+<div class="admin-filter-row">
+    <input class="search-input grow" placeholder="Search by name or receipt..." @bind="search" @bind:event="oninput" />
+</div>
+
+<section class="admin-panel payment-link-builder">
+    <div class="panel-title-row"><div><h2>Resident payment links</h2><p>Create a secure link for a specific outstanding invoice.</p></div></div>
+    <div class="payment-link-row">
+        <select class="search-input grow" @bind="selectedLinkBillId">
+            <option value="@Guid.Empty">Select pending bill</option>
+            @foreach (var bill in bills.Where(item => item.Status != "paid" && item.TotalAmount > item.PaidAmount))
+            {
+                <option value="@bill.Id">@bill.Tenant?.FullName · @bill.InvoiceNumber · ₹@Math.Max(bill.TotalAmount - bill.PaidAmount, 0).ToString("N0")</option>
+            }
+        </select>
+        <button class="button primary compact" @onclick="CreatePaymentLinkAsync">Create link</button>
+    </div>
+</section>
+
+@if (attempts.Count > 0)
+{
+    <section class="admin-panel table-card payment-review-panel">
+        <div class="panel-title-row"><div><h2>UPI confirmations</h2><p>Verify the transaction in your bank or gateway before approving.</p></div></div>
+        <div class="table-wrap"><table class="admin-table"><thead><tr><th>Resident</th><th>Invoice</th><th>Amount</th><th>UTR</th><th>Submitted</th><th>Actions</th></tr></thead><tbody>
+            @foreach (var attempt in attempts)
+            {
+                <tr><td>@attempt.PaymentLink?.Tenant?.FullName</td><td>@attempt.PaymentLink?.Bill?.InvoiceNumber</td><td>₹@attempt.Amount.ToString("N2")</td><td><strong>@attempt.TransactionId</strong></td><td>@attempt.SubmittedUtc.ToLocalTime().ToString("dd MMM, h:mm tt")</td><td><div class="actions"><button class="button primary compact" @onclick="() => ReviewAttemptAsync(attempt.Id, true)">Verify</button><button class="button danger compact" @onclick="() => ReviewAttemptAsync(attempt.Id, false)">Reject</button></div></td></tr>
+            }
+        </tbody></table></div>
+    </section>
+}
+
+@if (paymentLinks.Count > 0)
+{
+    <section class="admin-panel table-card"><div class="panel-title-row"><div><h2>Recent links</h2><p>Tokens are never stored in readable form.</p></div></div><div class="table-wrap"><table class="admin-table"><thead><tr><th>Resident</th><th>Invoice</th><th>Amount</th><th>Expires</th><th>Status</th><th></th></tr></thead><tbody>
+        @foreach (var item in paymentLinks.Take(15))
+        {
+            <tr><td>@item.Tenant?.FullName</td><td>@item.Bill?.InvoiceNumber</td><td>₹@item.Amount.ToString("N2")</td><td>@item.ExpiresUtc.ToLocalTime().ToString("dd MMM yyyy")</td><td><span class="badge @LinkBadge(item.Status)">@item.Status</span></td><td>@if(item.Status == "active"){<button class="button danger compact" title="Revoke payment link" @onclick="() => RevokeAsync(item.Id)">Revoke</button>}</td></tr>
+        }
+    </tbody></table></div></section>
+}
+
+@if (!FilteredPayments.Any())
+{
+    <div class="admin-empty">
+        <span class="empty-icon card-icon" aria-hidden="true"></span>
+        <p>No payments recorded yet.</p>
+    </div>
+}
+else
+{
+    <div class="admin-panel table-card">
+        <div class="table-wrap">
+            <table class="admin-table">
+                <thead>
+                    <tr>
+                        <th>Receipt #</th>
+                        <th>Tenant</th>
+                        <th>Room</th>
+                        <th>Amount</th>
+                        <th>Method</th>
+                        <th>Date</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var payment in FilteredPayments)
+                    {
+                        <tr>
+                            <td><strong>@payment.ReceiptNumber</strong></td>
+                            <td>@payment.Tenant?.FullName</td>
+                            <td>Room @payment.Tenant?.Room?.RoomNumber</td>
+                            <td>₹@payment.PaymentAmount.ToString("N0")</td>
+                            <td>@payment.PaymentMethod</td>
+                            <td>@payment.CreatedUtc.ToString("dd MMM yyyy")</td>
+                            <td><span class="badge success">@payment.PaymentStatus</span></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+}
+
+@code {
+    private List<Payment> payments = [];
+    private List<Bill> bills = [];
+    private HostelSetting? settings;
+    private PaymentForm form = new();
+    private bool showForm;
+    private string search = string.Empty;
+    private string? successMessage;
+    private List<PaymentLink> paymentLinks = [];
+    private List<PaymentAttempt> attempts = [];
+    private Guid selectedLinkBillId;
+    private string? generatedUrl;
+    private string? error;
+
+    private Bill? SelectedBill => bills.FirstOrDefault(bill => bill.Id == form.BillId);
+
+    private string QrUri => settings is null || SelectedBill is null
+        ? string.Empty
+        : QrService.CreateUpiQrDataUri(settings.UpiId, settings.UpiPayeeName, form.PaymentAmount <= 0 ? SelectedBill.TotalAmount : form.PaymentAmount, SelectedBill.Id.ToString());
+
+    private IEnumerable<Payment> FilteredPayments => payments.Where(payment =>
+    {
+        var tenantName = payment.Tenant?.FullName ?? string.Empty;
+        return string.IsNullOrWhiteSpace(search)
+            || tenantName.Contains(search, StringComparison.OrdinalIgnoreCase)
+            || payment.ReceiptNumber.Contains(search, StringComparison.OrdinalIgnoreCase);
+    });
+
+    protected override async Task OnInitializedAsync()
+    {
+        await ReloadAsync();
+        settings = await Repository.GetSettingsAsync();
+    }
+
+    private async Task ReloadAsync()
+    {
+        payments = await Repository.GetPaymentsAsync();
+        bills = await Repository.GetBillsAsync();
+        paymentLinks = await Repository.GetPaymentLinksAsync();
+        attempts = await Repository.GetPendingPaymentAttemptsAsync();
+    }
+
+    private async Task SaveAsync()
+    {
+        if (form.BillId == Guid.Empty)
+        {
+            return;
+        }
+
+        var payment = await Repository.RecordPaymentAsync(form, await ActorAsync());
+        if (settings is not null && !settings.PaymentTestMode)
+        {
+            await EmailNotifications.SendPaymentReceiptAsync(payment, settings);
+        }
+        successMessage = $"Payment recorded with receipt {payment.ReceiptNumber}.";
+        form = new PaymentForm();
+        showForm = false;
+        await ReloadAsync();
+    }
+
+    private async Task CreatePaymentLinkAsync()
+    {
+        if (selectedLinkBillId == Guid.Empty) return;
+        error = null;
+        try
+        {
+            var created = await Repository.CreatePaymentLinkAsync(selectedLinkBillId, await ActorAsync());
+            generatedUrl = $"{Navigation.BaseUri.TrimEnd('/')}/pay/{created.Token}";
+            selectedLinkBillId = Guid.Empty;
+            await ReloadAsync();
+        }
+        catch (InvalidOperationException exception) { error = exception.Message; }
+    }
+
+    private async Task ReviewAttemptAsync(Guid id, bool approve)
+    {
+        error = null;
+        try
+        {
+            var payment = await Repository.ReviewPaymentAttemptAsync(id, approve, await ActorAsync());
+            if (approve && settings is not null && !settings.PaymentTestMode) await EmailNotifications.SendPaymentReceiptAsync(payment, settings);
+            successMessage = approve
+                ? $"Payment verified with receipt {payment.ReceiptNumber}."
+                : "Payment confirmation rejected.";
+            await ReloadAsync();
+        }
+        catch (InvalidOperationException exception) { error = exception.Message; }
+    }
+
+    private async Task RevokeAsync(Guid id)
+    {
+        await Repository.RevokePaymentLinkAsync(id, await ActorAsync());
+        await ReloadAsync();
+    }
+
+    private void Cancel()
+    {
+        form = new PaymentForm();
+        showForm = false;
+    }
+
+    private async Task<string> ActorAsync()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        return state.User.Identity?.Name ?? "admin";
+    }
+
+    private static string LinkBadge(string status) => status switch { "paid" => "success", "active" => "warning", "revoked" or "expired" => "neutral", _ => "neutral" };
+}

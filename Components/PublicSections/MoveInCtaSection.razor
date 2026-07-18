@@ -1,0 +1,35 @@
+@inject IHostelSettingsReader SettingsReader
+
+<section class="move-cta">
+    <div>
+        <h2>Ready to Move In?</h2>
+        <p>Book your room at @HostelName and enjoy @Tagline.ToLowerInvariant().</p>
+        <div class="actions centered-actions">
+            <a class="button orange" href="/contact">Book Now <span aria-hidden="true">→</span></a>
+            <a class="button translucent" href="@PhoneHref">Call Us</a>
+        </div>
+    </div>
+</section>
+
+@code {
+    private HostelSetting? settings;
+    private string HostelName => string.IsNullOrWhiteSpace(settings?.HostelName) ? "our PG" : settings.HostelName.Trim();
+    private string Tagline => string.IsNullOrWhiteSpace(settings?.Tagline) ? "comfortable living with professional management" : settings.Tagline.Trim();
+
+    protected override async Task OnInitializedAsync()
+    {
+        settings = await SettingsReader.GetSettingsAsync();
+    }
+
+    private string PhoneHref
+    {
+        get
+        {
+            var phone = string.IsNullOrWhiteSpace(settings?.ContactPhone)
+                ? string.Empty
+                : settings.ContactPhone;
+            var digits = new string(phone.Where(char.IsDigit).ToArray());
+            return string.IsNullOrWhiteSpace(digits) ? "/contact" : $"tel:+{digits}";
+        }
+    }
+}

@@ -1,0 +1,110 @@
+@page "/admin/Access"
+@layout AdminLayout
+@attribute [Authorize(Roles = AppRoles.Admin)]
+@inject ILicenseService LicenseService
+@inject Microsoft.Extensions.Options.IOptions<LicensingOptions> LicensingOptions
+
+<DynamicPageTitle Prefix="Platform Access" />
+
+<div class="admin-page-title with-action">
+    <div>
+        <h1>Platform Access</h1>
+        <p>Your HostelPro subscription is issued and controlled by the separate vendor authority</p>
+    </div>
+    <button class="button outline compact" type="button" disabled="@refreshing" @onclick="RefreshAsync">
+        @(refreshing ? "Checking..." : "Check now")
+    </button>
+</div>
+
+@if (status is null)
+{
+    <section class="admin-panel access-loading" role="status">Checking subscription status...</section>
+}
+else
+{
+    <section class="access-summary admin-panel">
+        <div class="access-summary-head">
+            <div>
+                <span class="access-kicker">Externally managed</span>
+                <h2>Subscription and installation</h2>
+                <p>@status.Message</p>
+            </div>
+            <span class="access-state @(status.AllowsAccess ? "is-active" : "is-blocked")">
+                @(status.AllowsAccess ? "Access active" : "Access restricted")
+            </span>
+        </div>
+
+        <div class="access-facts">
+            <div><span>Licensed to</span><strong>@ValueOrDash(status.CustomerName)</strong></div>
+            <div><span>Authority state</span><strong class="text-capitalize">@status.State.Replace('_', ' ')</strong></div>
+            <div><span>Paid through</span><strong>@FormatDate(status.PaidThroughUtc)</strong></div>
+            <div><span>Next validation</span><strong>@FormatDateTime(status.NextCheckUtc)</strong></div>
+        </div>
+    </section>
+
+    <div class="access-boundary-grid">
+        <section class="admin-panel access-boundary-card">
+            <span class="access-card-number">01</span>
+            <h2>Vendor authority</h2>
+            <p>Customer licenses, maintenance status, installation limits, and deployment references are stored in a separate application and database.</p>
+            @if (CanOpenAuthority)
+            {
+                <a class="button primary compact" href="@LicensingOptions.Value.ManagementUrl" target="_blank" rel="noopener noreferrer">Open authority</a>
+            }
+            else
+            {
+                <span class="access-config-note">Configure <code>Licensing__ManagementUrl</code> to open the authority from here.</span>
+            }
+        </section>
+
+        <section class="admin-panel access-boundary-card">
+            <span class="access-card-number">02</span>
+            <h2>Data separation</h2>
+            <p>The authority receives only the license key, product code, installation ID, version, and host name. Tenant, KYC, billing, and payment data stays in this hostel database.</p>
+        </section>
+    </div>
+
+    <section class="admin-panel access-local-accounts">
+        <div>
+            <span class="access-kicker">Hostel database</span>
+            <h2>Resident sign-in accounts</h2>
+            <p>Tenant portal logins are local operational records. They do not grant or change the HostelPro subscription.</p>
+        </div>
+        <a class="button outline compact" href="/admin/ResidentAccounts">Manage residents</a>
+    </section>
+}
+
+@code {
+    private LicenseSnapshot? status;
+    private bool refreshing;
+
+    private bool CanOpenAuthority => Uri.TryCreate(
+        LicensingOptions.Value.ManagementUrl,
+        UriKind.Absolute,
+        out var uri) && (uri.Scheme == Uri.UriSchemeHttps || uri.IsLoopback);
+
+    protected override async Task OnInitializedAsync() =>
+        status = await LicenseService.GetStatusAsync();
+
+    private async Task RefreshAsync()
+    {
+        refreshing = true;
+        try
+        {
+            status = await LicenseService.GetStatusAsync(forceRefresh: true);
+        }
+        finally
+        {
+            refreshing = false;
+        }
+    }
+
+    private static string ValueOrDash(string value) =>
+        string.IsNullOrWhiteSpace(value) ? "Not assigned" : value;
+
+    private static string FormatDate(DateTimeOffset? value) =>
+        value?.ToLocalTime().ToString("dd MMM yyyy") ?? "Not available";
+
+    private static string FormatDateTime(DateTimeOffset? value) =>
+        value?.ToLocalTime().ToString("dd MMM yyyy, HH:mm") ?? "On next request";
+}

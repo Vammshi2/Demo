@@ -1,0 +1,132 @@
+@inherits LayoutComponentBase
+@inject IHostelSettingsReader SettingsReader
+@inject ILicenseService LicenseService
+@inject AuthenticationStateProvider AuthStateProvider
+
+<div class="admin-shell @(sidebarCollapsed ? "sidebar-collapsed" : null) @(mobileSidebarOpen ? "mobile-sidebar-open" : null)" style="--blue: @PrimaryColor; --orange: @AccentColor;">
+    <button class="admin-sidebar-overlay" type="button" aria-label="Close navigation" @onclick="CloseMobileSidebar"></button>
+    <aside class="admin-sidebar">
+        <div class="admin-sidebar-head">
+            <a class="admin-brand" href="/admin/Dashboard">
+                @if (!string.IsNullOrWhiteSpace(settings?.LogoImageUrl))
+                {
+                    <img class="admin-brand-logo" src="@settings.LogoImageUrl" alt="" />
+                }
+                else
+                {
+                    <PropertyBrandMark PropertyModel="@(settings?.PropertyModel ?? "pg")" ResidentCategory="@(settings?.ResidentCategory ?? "mixed")" CssClass="admin-brand-mark" />
+                }
+                <span>@HostelName</span>
+            </a>
+            <button class="sidebar-collapse" type="button" title="Collapse navigation" aria-label="Collapse navigation" @onclick="ToggleSidebar">
+                <svg viewBox="0 0 24 24"><path d="m15 18-6-6 6-6" /></svg>
+            </button>
+        </div>
+
+        <nav class="admin-nav" aria-label="Admin navigation">
+            <NavLink class="admin-nav-link" ActiveClass="active" href="/admin/Dashboard" Match="NavLinkMatch.All" @onclick="CloseMobileSidebar">
+                <span class="nav-icon grid-icon" aria-hidden="true"></span><span>Dashboard</span>
+            </NavLink>
+            <NavLink class="admin-nav-link" ActiveClass="active" href="/admin/RoomManagement" @onclick="CloseMobileSidebar">
+                <span class="nav-icon building-icon" aria-hidden="true"></span><span>Rooms</span>
+            </NavLink>
+            <NavLink class="admin-nav-link" ActiveClass="active" href="/admin/BedManagement" @onclick="CloseMobileSidebar">
+                <span class="nav-icon bed-icon" aria-hidden="true"></span><span>Beds</span>
+            </NavLink>
+            <NavLink class="admin-nav-link" ActiveClass="active" href="/admin/TenantManagement" @onclick="CloseMobileSidebar">
+                <span class="nav-icon users-icon" aria-hidden="true"></span><span>Tenants</span>
+            </NavLink>
+            <NavLink class="admin-nav-link" ActiveClass="active" href="/admin/Applications" @onclick="CloseMobileSidebar">
+                <span class="nav-icon chat-icon" aria-hidden="true"></span><span>Applications</span>
+            </NavLink>
+            <NavLink class="admin-nav-link" ActiveClass="active" href="/admin/Access" @onclick="CloseMobileSidebar">
+                <span class="nav-icon key-icon" aria-hidden="true"></span><span>Platform Access</span>
+            </NavLink>
+            <NavLink class="admin-nav-link" ActiveClass="active" href="/admin/BillManagement" @onclick="CloseMobileSidebar">
+                <span class="nav-icon bill-icon" aria-hidden="true"></span><span>Bills</span>
+            </NavLink>
+            <NavLink class="admin-nav-link" ActiveClass="active" href="/admin/PaymentManagement" @onclick="CloseMobileSidebar">
+                <span class="nav-icon card-icon" aria-hidden="true"></span><span>Payments</span>
+            </NavLink>
+            <NavLink class="admin-nav-link" ActiveClass="active" href="/admin/Expenses" @onclick="CloseMobileSidebar">
+                <span class="nav-icon wallet-icon" aria-hidden="true"></span><span>Expenses</span>
+            </NavLink>
+            <NavLink class="admin-nav-link" ActiveClass="active" href="/admin/Kyc" @onclick="CloseMobileSidebar">
+                <span class="nav-icon file-icon" aria-hidden="true"></span><span>KYC</span>
+            </NavLink>
+            <NavLink class="admin-nav-link" ActiveClass="active" href="/admin/Maintenance" @onclick="CloseMobileSidebar">
+                <span class="nav-icon tool-icon" aria-hidden="true"></span><span>Maintenance</span>
+            </NavLink>
+            <NavLink class="admin-nav-link" ActiveClass="active" href="/admin/Mess" @onclick="CloseMobileSidebar">
+                <span class="nav-icon utensils-icon" aria-hidden="true"></span><span>Mess</span>
+            </NavLink>
+            <NavLink class="admin-nav-link" ActiveClass="active" href="/admin/Reports" @onclick="CloseMobileSidebar">
+                <span class="nav-icon chart-icon" aria-hidden="true"></span><span>Reports</span>
+            </NavLink>
+            <NavLink class="admin-nav-link" ActiveClass="active" href="/admin/EnquiryManagement" @onclick="CloseMobileSidebar">
+                <span class="nav-icon chat-icon" aria-hidden="true"></span><span>Enquiries</span>
+            </NavLink>
+            <NavLink class="admin-nav-link" ActiveClass="active" href="/admin/gallery" @onclick="CloseMobileSidebar">
+                <span class="nav-icon image-icon" aria-hidden="true"></span><span>Gallery</span>
+            </NavLink>
+            <NavLink class="admin-nav-link" ActiveClass="active" href="/admin/Website" @onclick="CloseMobileSidebar">
+                <span class="nav-icon globe-icon" aria-hidden="true"></span><span>Website</span>
+            </NavLink>
+            <NavLink class="admin-nav-link" ActiveClass="active" href="/admin/Settings" @onclick="CloseMobileSidebar">
+                <span class="nav-icon gear-icon" aria-hidden="true"></span><span>Settings</span>
+            </NavLink>
+        </nav>
+
+        <div class="admin-sidebar-foot">© @DateTime.Today.Year @HostelName</div>
+    </aside>
+
+    <div class="admin-main">
+        <header class="admin-topbar">
+            <div class="admin-topbar-start">
+                <button class="admin-mobile-menu" type="button" aria-label="Open navigation" @onclick="ToggleMobileSidebar">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" /></svg>
+                </button>
+                <a class="admin-view-site" href="/" target="_blank">View public site <span aria-hidden="true">↗</span></a>
+            </div>
+            @if (license?.IsGracePeriod == true)
+            {
+                <span class="license-grace-badge" title="@license.Message">Offline grace period</span>
+            }
+            <form class="admin-user-actions" method="post" action="/account/logout">
+                <AntiforgeryToken />
+                <div class="admin-account-copy"><strong>@UserName</strong><span>Administrator</span></div>
+                <button class="avatar-button" title="Sign out" type="submit">@UserInitial</button>
+            </form>
+        </header>
+        <main class="admin-content">
+            @Body
+        </main>
+    </div>
+</div>
+
+@code {
+    private bool sidebarCollapsed;
+    private bool mobileSidebarOpen;
+    private HostelSetting? settings;
+    private LicenseSnapshot? license;
+    private string UserName { get; set; } = "Admin";
+
+    protected override async Task OnInitializedAsync()
+    {
+        settings = await SettingsReader.GetSettingsAsync();
+        license = await LicenseService.GetStatusAsync();
+        var auth = await AuthStateProvider.GetAuthenticationStateAsync();
+        UserName = auth.User.Identity?.Name?.Split('@')[0] ?? "Admin";
+    }
+
+    private string HostelName => string.IsNullOrWhiteSpace(settings?.HostelName) ? "Hostel" : settings.HostelName.Trim();
+    private string PrimaryColor => string.IsNullOrWhiteSpace(settings?.PrimaryColor) ? "#263f95" : settings.PrimaryColor;
+    private string AccentColor => string.IsNullOrWhiteSpace(settings?.AccentColor) ? "#e57942" : settings.AccentColor;
+    private string UserInitial => string.IsNullOrWhiteSpace(UserName) ? "A" : UserName[..1].ToUpperInvariant();
+
+    private void ToggleSidebar() => sidebarCollapsed = !sidebarCollapsed;
+
+    private void ToggleMobileSidebar() => mobileSidebarOpen = !mobileSidebarOpen;
+
+    private void CloseMobileSidebar() => mobileSidebarOpen = false;
+}

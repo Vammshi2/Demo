@@ -1,0 +1,104 @@
+@page "/rooms"
+@inject IHostelRepository Repository
+
+<DynamicPageTitle Prefix="Rooms" />
+
+<section class="section page-section">
+    <div class="section-title">
+        <p class="eyebrow orange">OUR ROOMS</p>
+        <h1>Available Rooms</h1>
+        <p>Choose the perfect room that suits your needs and budget.</p>
+    </div>
+
+    <div class="toolbar public-toolbar">
+        <input class="search-input" placeholder="Search room, floor, or amenity" @bind="search" @bind:event="oninput" />
+        <select class="search-input" @bind="typeFilter">
+            <option value="all">All room types</option>
+            <option value="single">Single</option>
+            <option value="double">Double</option>
+            <option value="triple">Triple</option>
+        </select>
+        <label class="button outline compact">
+            <input type="checkbox" @bind="availableOnly" />
+            Available only
+        </label>
+    </div>
+
+    <div class="room-grid">
+        @foreach (var room in FilteredRooms)
+        {
+            var availableBeds = Math.Max(room.TotalBeds - room.OccupiedBeds, 0);
+            <article class="public-room-card">
+                @if (string.IsNullOrEmpty(room.CoverImageUrl))
+                {
+                    <div class="room-placeholder" aria-hidden="true">
+                        <svg viewBox="0 0 24 24">
+                            <path d="M4 13V7.5A2.5 2.5 0 0 1 6.5 5h11A2.5 2.5 0 0 1 20 7.5V13" />
+                            <path d="M4 13h16v6M4 19v-6" />
+                            <path d="M7 10h4M13 10h4" />
+                        </svg>
+                    </div>
+                }
+                else
+                {
+                    <img src="@room.CoverImageUrl" alt="Room @room.RoomNumber" style="width: 100%; height: 220px; object-fit: cover; border-top-left-radius: 12px; border-top-right-radius: 12px;" />
+                }
+                <div class="room-card-body">
+                    <div class="room-title-row">
+                        <h2>Room @room.RoomNumber</h2>
+                        <span class="badge @(availableBeds > 0 ? "success" : "warning")">
+                            @(availableBeds > 0 ? $"{availableBeds} Beds Available" : "Full")
+                        </span>
+                    </div>
+                    <p class="muted">@RoomTypeLabel(room.RoomType) · Floor @room.FloorNumber</p>
+                    <div class="room-meta">
+                        <span>♙ @room.TotalBeds Beds</span>
+                        <strong>₹ @room.MonthlyRent.ToString("N0")/mo</strong>
+                    </div>
+                    <div class="amenity-pills">
+                        @foreach (var amenity in SplitAmenities(room.Amenities).Take(4))
+                        {
+                            <span>⊙ @amenity</span>
+                        }
+                    </div>
+                    <a class="button outline full-width" href="/contact">Enquire Now</a>
+                </div>
+            </article>
+        }
+    </div>
+</section>
+
+@code {
+    private List<Room> rooms = [];
+    private string search = string.Empty;
+    private string typeFilter = "all";
+    private bool availableOnly;
+
+    private IEnumerable<Room> FilteredRooms => rooms.Where(room =>
+    {
+        var availableBeds = Math.Max(room.TotalBeds - room.OccupiedBeds, 0);
+        var query = $"{room.RoomNumber} {room.FloorNumber} {room.RoomType} {room.Amenities} {room.Description}".ToLowerInvariant();
+        var matchesSearch = string.IsNullOrWhiteSpace(search) || query.Contains(search.ToLowerInvariant());
+        var matchesType = typeFilter == "all" || room.RoomType == typeFilter;
+        var matchesAvailability = !availableOnly || availableBeds > 0;
+        return matchesSearch && matchesType && matchesAvailability;
+    });
+
+    protected override async Task OnInitializedAsync()
+    {
+        rooms = await Repository.GetPublicRoomsAsync();
+    }
+
+    private static IEnumerable<string> SplitAmenities(string amenities)
+    {
+        return amenities.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+    }
+
+    private static string RoomTypeLabel(string roomType) => roomType switch
+    {
+        "single" => "Single Occupancy",
+        "double" => "Double Sharing",
+        "triple" => "Triple Sharing",
+        _ => roomType
+    };
+}

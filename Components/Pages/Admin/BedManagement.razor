@@ -1,0 +1,188 @@
+@page "/admin/BedManagement"
+@layout AdminLayout
+@attribute [Authorize(Roles = AppRoles.Admin)]
+@inject IHostelRepository Repository
+@inject AuthenticationStateProvider AuthStateProvider
+
+<DynamicPageTitle Prefix="Bed Management" />
+
+<div class="admin-page-title with-action">
+    <div>
+        <h1>Bed Management</h1>
+        <p>Manage beds across all rooms</p>
+    </div>
+    <button class="button primary compact" @onclick="StartCreate"><span aria-hidden="true">＋</span> Add Bed</button>
+</div>
+
+@if (showForm)
+{
+    <EditForm Model="form" OnValidSubmit="SaveAsync" FormName="bed-management">
+        <DataAnnotationsValidator />
+        <div class="admin-panel form-grid admin-form-panel">
+            <div class="form-grid two">
+                <div class="field">
+                    <label>Room</label>
+                    <InputSelect @bind-Value="form.RoomId">
+                        <option value="@Guid.Empty">Select room</option>
+                        @foreach (var room in rooms)
+                        {
+                            <option value="@room.Id">Room @room.RoomNumber</option>
+                        }
+                    </InputSelect>
+                </div>
+                <div class="field">
+                    <label>Bed number</label>
+                    <InputText @bind-Value="form.BedNumber" />
+                    <ValidationMessage For="() => form.BedNumber" />
+                </div>
+            </div>
+            <div class="field">
+                <label>Status</label>
+                <InputSelect @bind-Value="form.Status">
+                    <option value="available">Available</option>
+                    <option value="occupied">Occupied</option>
+                    <option value="maintenance">Maintenance</option>
+                </InputSelect>
+            </div>
+            <div class="actions">
+                <button class="button primary" type="submit">Save bed</button>
+                <button class="button outline" type="button" @onclick="Cancel">Cancel</button>
+            </div>
+        </div>
+    </EditForm>
+}
+
+<div class="admin-filter-row compact-row">
+    <label>Filter by Room:</label>
+    <select class="search-input" @bind="roomFilter">
+        <option value="all">All Rooms</option>
+        @foreach (var room in rooms)
+        {
+            <option value="@room.Id.ToString()">Room @room.RoomNumber</option>
+        }
+    </select>
+</div>
+
+@if (!FilteredBeds.Any())
+{
+    <div class="admin-empty">
+        <span class="empty-icon bed-icon" aria-hidden="true"></span>
+        <p>No beds found. Add beds to your rooms.</p>
+    </div>
+}
+else
+{
+    <div class="bed-grid">
+        @foreach (var bed in FilteredBeds)
+        {
+            <article class="bed-tile @bed.Status">
+                <div class="bed-tile-top">
+                    <span class="bed-tile-icon bed-icon" aria-hidden="true"></span>
+                    <span class="badge @StatusBadge(bed.Status)">@StatusLabel(bed.Status)</span>
+                </div>
+                <div>
+                    <h3>Bed @bed.BedNumber</h3>
+                    <p>Room @bed.Room?.RoomNumber</p>
+                </div>
+                <div class="bed-tile-meta">
+                    <div>
+                        <span>Floor</span>
+                        <strong>@(bed.Room?.FloorNumber ?? "-")</strong>
+                    </div>
+                    <div>
+                        <span>Type</span>
+                        <strong>@RoomTypeLabel(bed.Room?.RoomType)</strong>
+                    </div>
+                </div>
+                @if (bed.Status != "occupied")
+                {
+                    <div class="bed-tile-actions">
+                        <button class="button danger compact" @onclick="() => DeleteAsync(bed.Id)">Delete</button>
+                    </div>
+                }
+            </article>
+        }
+    </div>
+}
+
+@code {
+    private List<Room> rooms = [];
+    private List<Bed> beds = [];
+    private BedForm form = new();
+    private string roomFilter = "all";
+    private bool showForm;
+
+    private IEnumerable<Bed> FilteredBeds => roomFilter == "all"
+        ? beds
+        : beds.Where(bed => bed.RoomId.ToString() == roomFilter);
+
+    protected override async Task OnInitializedAsync()
+    {
+        rooms = await Repository.GetRoomsAsync();
+        beds = await Repository.GetBedsAsync();
+    }
+
+    private void StartCreate()
+    {
+        form = new BedForm();
+        showForm = true;
+    }
+
+    private void Cancel()
+    {
+        form = new BedForm();
+        showForm = false;
+    }
+
+    private async Task SaveAsync()
+    {
+        if (form.RoomId == Guid.Empty)
+        {
+            return;
+        }
+
+        await Repository.SaveBedAsync(form, await ActorAsync());
+        form = new BedForm();
+        showForm = false;
+        beds = await Repository.GetBedsAsync();
+        rooms = await Repository.GetRoomsAsync();
+    }
+
+    private async Task DeleteAsync(Guid id)
+    {
+        await Repository.DeleteBedAsync(id, await ActorAsync());
+        beds = await Repository.GetBedsAsync();
+        rooms = await Repository.GetRoomsAsync();
+    }
+
+    private static string StatusBadge(string status) => status switch
+    {
+        "available" => "success",
+        "occupied" => "neutral",
+        "maintenance" => "warning",
+        _ => "neutral"
+    };
+
+    private static string StatusLabel(string status) => status switch
+    {
+        "available" => "Available",
+        "occupied" => "Occupied",
+        "maintenance" => "Maintenance",
+        _ => status
+    };
+
+    private static string RoomTypeLabel(string? roomType) => roomType switch
+    {
+        "single" => "Single",
+        "double" => "Double",
+        "triple" => "Triple",
+        "dormitory" => "Dormitory",
+        _ => string.IsNullOrWhiteSpace(roomType) ? "-" : roomType
+    };
+
+    private async Task<string> ActorAsync()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        return state.User.Identity?.Name ?? "admin";
+    }
+}

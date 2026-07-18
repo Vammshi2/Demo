@@ -1,0 +1,69 @@
+@page "/"
+@inject IHostelRepository Repository
+@inject IHostelSettingsReader SettingsReader
+
+<PageTitle>@HostelName | @Tagline</PageTitle>
+
+<section class="section public-hero">
+    <div class="hero-copy">
+        <p class="hero-badge"><span>↯</span> @PropertyLabel · @Tagline</p>
+        <h1>@HeroTitle <span>@HeroHighlight</span></h1>
+        <p class="lead">@HeroDescription</p>
+        <div class="actions">
+            <a class="button primary" href="/rooms">View Rooms</a>
+            <a class="button outline" href="/contact">Contact Us</a>
+        </div>
+        @if (amenities.Count > 0)
+        {
+            <div class="hero-features">
+                @foreach (var amenity in amenities.Take(3))
+                {
+                    <span><b>✓</b>@amenity.Name</span>
+                }
+            </div>
+        }
+    </div>
+
+    <div class="hero-photo-card" aria-label="Modern hostel room">
+        <img src="@HeroImage" alt="Accommodation at @HostelName" />
+        <div class="occupancy-card">
+            <strong>@stats.OccupancyPercentage.ToString("0.#")%</strong>
+            <div>
+                <b>Occupancy Rate</b>
+                <span>@ResidentSummary</span>
+            </div>
+        </div>
+    </div>
+</section>
+
+<AmenitiesSection />
+<FeaturedRoomsSection />
+<TestimonialsSection />
+<MoveInCtaSection />
+
+@code {
+    private DashboardStats stats = new();
+    private HostelSetting? settings;
+    private List<Amenity> amenities = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadStatsAsync();
+        await LoadSettingsAsync();
+        await LoadAmenitiesAsync();
+    }
+
+    private async Task LoadStatsAsync() => stats = await Repository.GetDashboardStatsAsync();
+    private async Task LoadSettingsAsync() => settings = await SettingsReader.GetSettingsAsync();
+    private async Task LoadAmenitiesAsync() => amenities = await Repository.GetAmenitiesAsync(publishedOnly: true);
+
+    private string HostelName => ValueOrDefault(settings?.HostelName, "Your PG");
+    private string Tagline => ValueOrDefault(settings?.Tagline, "Premium accommodation");
+    private string HeroTitle => ValueOrDefault(settings?.HeroTitle, "A better place");
+    private string HeroHighlight => ValueOrDefault(settings?.HeroHighlight, "to call home");
+    private string HeroDescription => ValueOrDefault(settings?.HeroDescription, "Safe, comfortable accommodation with responsive management.");
+    private string HeroImage => ValueOrDefault(settings?.HeroImageUrl, "https://images.unsplash.com/photo-1555854877-bab0e564b8d5?auto=format&fit=crop&w=1600&q=85");
+    private string PropertyLabel => settings is null ? "Managed accommodation" : $"{(settings.ResidentCategory == "men" ? "Men's" : settings.ResidentCategory == "women" ? "Women's" : "Mixed")} {(settings.PropertyModel == "co_living" ? "Co-living" : "PG")}";
+    private string ResidentSummary => stats.ActiveTenants == 0 ? "Ready for new residents" : $"Home to {stats.ActiveTenants} active resident{(stats.ActiveTenants == 1 ? string.Empty : "s")}";
+    private static string ValueOrDefault(string? value, string fallback) => string.IsNullOrWhiteSpace(value) ? fallback : value.Trim();
+}

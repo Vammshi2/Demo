@@ -1,0 +1,238 @@
+@page "/admin/Dashboard"
+@layout AdminLayout
+@attribute [Authorize(Roles = AppRoles.Admin)]
+@inject IHostelRepository Repository
+
+<DynamicPageTitle Prefix="Admin Dashboard" />
+
+<div class="admin-page-title">
+    <div>
+        <h1>Dashboard</h1>
+        <p>Overview of your hostel management</p>
+    </div>
+</div>
+
+<div class="admin-metric-grid">
+    <article class="admin-metric-card">
+        <div>
+            <span>Total Rooms</span>
+            <strong>@stats.TotalRooms</strong>
+        </div>
+        <span class="metric-icon blue building-icon" aria-hidden="true"></span>
+    </article>
+    <article class="admin-metric-card">
+        <div>
+            <span>Total Beds</span>
+            <strong>@stats.OccupiedBeds/@stats.TotalBeds</strong>
+        </div>
+        <span class="metric-icon orange bed-icon" aria-hidden="true"></span>
+    </article>
+    <article class="admin-metric-card">
+        <div>
+            <span>Active Tenants</span>
+            <strong>@stats.ActiveTenants</strong>
+        </div>
+        <span class="metric-icon green users-icon" aria-hidden="true"></span>
+    </article>
+    <article class="admin-metric-card">
+        <div>
+            <span>Available Beds</span>
+            <strong>@stats.AvailableBeds</strong>
+        </div>
+        <span class="metric-icon orange bed-icon" aria-hidden="true"></span>
+    </article>
+    <article class="admin-metric-card wide">
+        <div>
+            <span>Monthly Collection</span>
+            <strong>₹@stats.MonthlyRevenue.ToString("N0")</strong>
+        </div>
+        <span class="metric-icon green rupee-icon" aria-hidden="true"></span>
+    </article>
+    <article class="admin-metric-card wide">
+        <div>
+            <span>Expected Revenue</span>
+            <strong>₹@stats.ExpectedRevenue.ToString("N0")</strong>
+        </div>
+        <span class="metric-icon blue chart-icon" aria-hidden="true"></span>
+    </article>
+    <article class="admin-metric-card wide">
+        <div>
+            <span>Pending Amount</span>
+            <strong>₹@PendingAmount.ToString("N0")</strong>
+        </div>
+        <span class="metric-icon red alert-icon" aria-hidden="true"></span>
+    </article>
+    <article class="admin-metric-card wide">
+        <div>
+            <span>Monthly Expenses</span>
+            <strong>₹@stats.MonthlyExpenses.ToString("N0")</strong>
+        </div>
+        <span class="metric-icon orange wallet-icon" aria-hidden="true"></span>
+    </article>
+    <article class="admin-metric-card">
+        <div>
+            <span>Net Profit</span>
+            <strong>₹@stats.NetProfit.ToString("N0")</strong>
+        </div>
+        <span class="metric-icon @(stats.NetProfit >= 0 ? "green" : "red") rupee-icon" aria-hidden="true"></span>
+    </article>
+    <article class="admin-metric-card">
+        <div>
+            <span>Open Tickets</span>
+            <strong>@stats.OpenMaintenanceTickets</strong>
+        </div>
+        <span class="metric-icon red tool-icon" aria-hidden="true"></span>
+    </article>
+    <article class="admin-metric-card">
+        <div>
+            <span>Pending KYC</span>
+            <strong>@stats.PendingKycDocuments</strong>
+        </div>
+        <span class="metric-icon orange file-icon" aria-hidden="true"></span>
+    </article>
+    <article class="admin-metric-card">
+        <div>
+            <span>Overdue Bills</span>
+            <strong>@stats.OverdueBills</strong>
+        </div>
+        <span class="metric-icon red bill-icon" aria-hidden="true"></span>
+    </article>
+</div>
+
+<div class="admin-dashboard-grid">
+    <article class="admin-panel revenue-panel">
+        <h2>Revenue Overview</h2>
+        <svg class="line-chart-svg" viewBox="0 0 760 220" role="img" aria-label="Revenue overview chart">
+            <g class="chart-gridlines">
+                <path d="M50 18H745M50 60H745M50 102H745M50 144H745M50 186H745" />
+                <path d="M50 18V186M160 18V186M270 18V186M380 18V186M490 18V186M600 18V186M710 18V186" />
+            </g>
+            <path class="chart-axis" d="M50 18V186H745" />
+            <g class="chart-labels">
+                <text x="38" y="190">0</text>
+                <text x="38" y="148">1</text>
+                <text x="38" y="106">2</text>
+                <text x="38" y="64">3</text>
+                <text x="38" y="22">4</text>
+                <text x="150" y="210">Jan</text>
+                <text x="260" y="210">Feb</text>
+                <text x="370" y="210">Mar</text>
+                <text x="480" y="210">Apr</text>
+                <text x="590" y="210">May</text>
+                <text x="700" y="210">Jun</text>
+            </g>
+        </svg>
+    </article>
+
+    <article class="admin-panel occupancy-panel">
+        <h2>Occupancy Rate</h2>
+        <div class="donut-wrap">
+            <div class="donut" style="@OccupancyStyle"><span></span></div>
+            <div class="donut-legend">
+                <span><b class="legend-blue"></b> Occupied: @stats.OccupiedBeds</span>
+                <span><b class="legend-green"></b> Available: @stats.AvailableBeds</span>
+            </div>
+        </div>
+    </article>
+</div>
+
+<article class="admin-panel recent-panel">
+    <h2>Defaulters List</h2>
+    @if (DefaulterBills.Count == 0)
+    {
+        <div class="admin-empty compact">
+            <p>No overdue tenants right now.</p>
+        </div>
+    }
+    else
+    {
+        <div class="table-wrap">
+            <table class="admin-table">
+                <thead>
+                    <tr>
+                        <th>Tenant</th>
+                        <th>Room</th>
+                        <th>Invoice</th>
+                        <th>Due</th>
+                        <th>Amount</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var bill in DefaulterBills)
+                    {
+                        <tr>
+                            <td><strong>@bill.Tenant?.FullName</strong></td>
+                            <td>Room @bill.Tenant?.Room?.RoomNumber</td>
+                            <td>@(string.IsNullOrWhiteSpace(bill.InvoiceNumber) ? "-" : bill.InvoiceNumber)</td>
+                            <td>@bill.DueDate.ToString("dd MMM yyyy")</td>
+                            <td>₹@Math.Max(bill.TotalAmount - bill.PaidAmount, 0).ToString("N0")</td>
+                            <td><span class="badge danger">@bill.Status</span></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</article>
+
+<article class="admin-panel recent-panel">
+    <h2>Recent Payments</h2>
+    @if (recentPayments.Count == 0)
+    {
+        <div class="admin-empty compact">
+            <p>No payments recorded yet.</p>
+        </div>
+    }
+    else
+    {
+        <div class="table-wrap">
+            <table class="admin-table">
+                <thead>
+                    <tr>
+                        <th>Receipt</th>
+                        <th>Tenant</th>
+                        <th>Amount</th>
+                        <th>Method</th>
+                        <th>Date</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var payment in recentPayments)
+                    {
+                        <tr>
+                            <td>@payment.ReceiptNumber</td>
+                            <td>@payment.Tenant?.FullName</td>
+                            <td>₹@payment.PaymentAmount.ToString("N0")</td>
+                            <td>@payment.PaymentMethod</td>
+                            <td>@payment.CreatedUtc.ToString("dd MMM yyyy")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</article>
+
+@code {
+    private DashboardStats stats = new();
+    private List<Payment> recentPayments = [];
+    private List<Bill> bills = [];
+    private decimal PendingAmount { get; set; }
+    private string OccupancyStyle => $"--occupied:{Math.Min(stats.OccupancyPercentage, 100)}%";
+    private List<Bill> DefaulterBills => bills
+        .Where(bill => bill.DueDate < DateOnly.FromDateTime(DateTime.Today) && bill.Status is "overdue" or "partially_paid" or "pending")
+        .OrderBy(bill => bill.DueDate)
+        .Take(8)
+        .ToList();
+
+    protected override async Task OnInitializedAsync()
+    {
+        stats = await Repository.GetDashboardStatsAsync();
+        bills = await Repository.GetBillsAsync();
+        PendingAmount = bills
+            .Where(bill => bill.Status is "pending" or "overdue" or "partially_paid")
+            .Sum(bill => Math.Max(bill.TotalAmount - bill.PaidAmount, 0));
+        recentPayments = (await Repository.GetPaymentsAsync()).Take(5).ToList();
+    }
+}

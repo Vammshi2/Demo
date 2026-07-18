@@ -1,0 +1,202 @@
+@page "/admin/Settings"
+@layout AdminLayout
+@attribute [Authorize(Roles = AppRoles.Admin)]
+@inject IHostelRepository Repository
+@inject AuthenticationStateProvider AuthStateProvider
+
+<PageTitle>Settings | @(setting?.HostelName ?? "Hostel")</PageTitle>
+
+<div class="admin-page-title">
+    <div>
+        <h1>Settings</h1>
+        <p>Manage hostel settings and configuration</p>
+    </div>
+</div>
+
+@if (saved)
+{
+    <div class="alert success">Settings saved securely.</div>
+}
+@if (!string.IsNullOrWhiteSpace(saveError))
+{
+    <div class="alert danger">@saveError</div>
+}
+
+@if (setting is not null)
+{
+    <EditForm Model="setting" OnValidSubmit="SaveAsync" FormName="settings">
+        <DataAnnotationsValidator />
+        <div class="settings-grid">
+            <article class="admin-panel settings-card">
+                <h2><span class="setting-icon building-icon" aria-hidden="true"></span> PG Identity</h2>
+                <div class="field">
+                    <label>Hostel Name</label>
+                    <InputText @bind-Value="setting.HostelName" />
+                </div>
+                <div class="field">
+                    <label>Tagline</label>
+                    <InputText @bind-Value="setting.Tagline" />
+                </div>
+                <div class="form-grid two">
+                    <div class="field">
+                        <label>Property model</label>
+                        <InputSelect @bind-Value="setting.PropertyModel">
+                            <option value="pg">Paying Guest (PG)</option>
+                            <option value="co_living">Co-living</option>
+                        </InputSelect>
+                    </div>
+                    <div class="field">
+                        <label>Resident category</label>
+                        <InputSelect @bind-Value="setting.ResidentCategory">
+                            <option value="mixed">Mixed</option>
+                            <option value="men">Men only</option>
+                            <option value="women">Women only</option>
+                        </InputSelect>
+                    </div>
+                </div>
+                <div class="form-grid two">
+                    <div class="field">
+                        <label>Founded Year</label>
+                        <InputNumber @bind-Value="setting.FoundedYear" />
+                    </div>
+                    <div class="field">
+                        <label>Logo Image URL</label>
+                        <InputText @bind-Value="setting.LogoImageUrl" />
+                    </div>
+                </div>
+                <div class="form-grid two">
+                    <div class="field"><label>Primary Color</label><div class="color-field"><input type="color" @bind="setting.PrimaryColor" /><InputText @bind-Value="setting.PrimaryColor" /></div></div>
+                    <div class="field"><label>Accent Color</label><div class="color-field"><input type="color" @bind="setting.AccentColor" /><InputText @bind-Value="setting.AccentColor" /></div></div>
+                </div>
+                <div class="field">
+                    <label>Phone</label>
+                    <InputText @bind-Value="setting.ContactPhone" />
+                </div>
+                <div class="field">
+                    <label>WhatsApp Number</label>
+                    <InputText @bind-Value="setting.WhatsAppPhone" />
+                </div>
+                <div class="field">
+                    <label>Email</label>
+                    <InputText type="email" @bind-Value="setting.ContactEmail" />
+                </div>
+                <div class="field">
+                    <label>Address</label>
+                    <InputTextArea @bind-Value="setting.Address" />
+                </div>
+                <label class="muted checkbox-row">
+                    <InputCheckbox @bind-Value="setting.PublicRegistrationEnabled" />
+                    Accept public resident applications
+                </label>
+            </article>
+
+            <article class="admin-panel settings-card">
+                <h2><span class="setting-icon globe-icon" aria-hidden="true"></span> Public Website</h2>
+                <div class="form-grid two">
+                    <div class="field">
+                        <label>Hero Title</label>
+                        <InputText @bind-Value="setting.HeroTitle" />
+                    </div>
+                    <div class="field">
+                        <label>Highlighted Text</label>
+                        <InputText @bind-Value="setting.HeroHighlight" />
+                    </div>
+                </div>
+                <div class="field">
+                    <label>Hero Description</label>
+                    <InputTextArea @bind-Value="setting.HeroDescription" />
+                </div>
+                <div class="field">
+                    <label>Hero Image URL</label>
+                    <InputText @bind-Value="setting.HeroImageUrl" />
+                </div>
+                <div class="field">
+                    <label>About Description</label>
+                    <InputTextArea @bind-Value="setting.AboutDescription" />
+                </div>
+                <div class="field">
+                    <label>Footer Description</label>
+                    <InputTextArea @bind-Value="setting.FooterDescription" />
+                </div>
+                <a class="button outline compact" href="/admin/Website">Manage amenities and testimonials</a>
+            </article>
+
+            <article class="admin-panel settings-card settings-card-wide">
+                <h2><span class="setting-icon bill-icon" aria-hidden="true"></span> Billing Configuration</h2>
+                <div class="form-grid two">
+                    <div class="field">
+                        <label>Billing Day</label>
+                        <InputNumber @bind-Value="setting.BillingDay" />
+                    </div>
+                    <div class="field">
+                        <label>Due Day</label>
+                        <InputNumber @bind-Value="setting.DueDay" />
+                    </div>
+                </div>
+                <div class="field">
+                    <label>Late Fee</label>
+                    <InputNumber @bind-Value="setting.LateFee" />
+                </div>
+                <div class="form-grid two">
+                    <div class="field">
+                        <label>UPI ID</label>
+                        <InputText @bind-Value="setting.UpiId" />
+                    </div>
+                    <div class="field">
+                        <label>UPI Payee Name</label>
+                        <InputText @bind-Value="setting.UpiPayeeName" />
+                    </div>
+                </div>
+                <div class="field">
+                    <label>Hostel Rules</label>
+                    <InputTextArea @bind-Value="setting.HostelRules" />
+                </div>
+                <label class="muted checkbox-row">
+                    <InputCheckbox @bind-Value="setting.PaymentTestMode" />
+                    Test mode (records are excluded from collected revenue and bill balances)
+                </label>
+            </article>
+
+            <div class="settings-save-row">
+                <button class="button primary compact" type="submit">Save Settings</button>
+            </div>
+        </div>
+    </EditForm>
+}
+
+@code {
+    private HostelSetting? setting;
+    private bool saved;
+    private string? saveError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        setting = await Repository.GetSettingsAsync();
+    }
+
+    private async Task SaveAsync()
+    {
+        if (setting is null)
+        {
+            return;
+        }
+
+        saved = false;
+        saveError = null;
+        try
+        {
+            await Repository.SaveSettingsAsync(setting, await ActorAsync());
+            saved = true;
+        }
+        catch (InvalidOperationException exception)
+        {
+            saveError = exception.Message;
+        }
+    }
+
+    private async Task<string> ActorAsync()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        return state.User.Identity?.Name ?? "admin";
+    }
+}

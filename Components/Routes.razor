@@ -1,0 +1,33 @@
+<LicenseGate>
+<CascadingAuthenticationState>
+    <Router AppAssembly="@typeof(Program).Assembly">
+        <Found Context="routeData">
+            <AuthorizeRouteView RouteData="@routeData" DefaultLayout="@typeof(MainLayout)">
+                <NotAuthorized>
+                    <LayoutView Layout="typeof(MainLayout)">
+                        <section class="section narrow">
+                            <div class="empty-state">
+                                <h1>Access restricted</h1>
+                                <p>You need an authorized account to open this page.</p>
+                                <a class="button primary" href="/Login">Sign in</a>
+                            </div>
+                        </section>
+                    </LayoutView>
+                </NotAuthorized>
+            </AuthorizeRouteView>
+            <FocusOnNavigate RouteData="@routeData" Selector="h1" />
+        </Found>
+        <NotFound>
+            <LayoutView Layout="typeof(MainLayout)">
+                <section class="section narrow">
+                    <div class="empty-state">
+                        <h1>Page not found</h1>
+                        <p>The page you requested does not exist.</p>
+                        <a class="button primary" href="/">Back home</a>
+                    </div>
+                </section>
+            </LayoutView>
+        </NotFound>
+    </Router>
+</CascadingAuthenticationState>
+</LicenseGate>

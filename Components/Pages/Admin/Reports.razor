@@ -1,0 +1,272 @@
+@page "/admin/Reports"
+@layout AdminLayout
+@attribute [Authorize(Roles = AppRoles.Admin)]
+@inject IHostelRepository Repository
+
+<DynamicPageTitle Prefix="Reports" />
+
+<div class="admin-page-title with-action">
+    <div>
+        <h1>Reports</h1>
+        <p>View detailed analytics and reports</p>
+    </div>
+    <div class="report-export-actions">
+        <a class="button outline compact" href="/admin/reports/tenants.pdf" target="_blank">Tenant PDF</a>
+        <a class="button outline compact" href="/admin/reports/payments.pdf" target="_blank">Paid PDF</a>
+        <a class="button primary compact" href="/admin/reports/unpaid.pdf" target="_blank">Unpaid PDF</a>
+    </div>
+</div>
+
+<div class="report-tabs">
+    <button class="@TabClass("collection")" @onclick='() => reportTab = "collection"'><span class="report-tab-icon rupee-icon" aria-hidden="true"></span>Collection</button>
+    <button class="@TabClass("profit")" @onclick='() => reportTab = "profit"'><span class="report-tab-icon wallet-icon" aria-hidden="true"></span>Profit</button>
+    <button class="@TabClass("pending")" @onclick='() => reportTab = "pending"'><span class="report-tab-icon bill-icon" aria-hidden="true"></span>Pending</button>
+    <button class="@TabClass("occupancy")" @onclick='() => reportTab = "occupancy"'><span class="report-tab-icon building-icon" aria-hidden="true"></span>Occupancy</button>
+    <button class="@TabClass("tenants")" @onclick='() => reportTab = "tenants"'><span class="report-tab-icon users-icon" aria-hidden="true"></span>Tenants</button>
+</div>
+
+@if (reportTab == "collection")
+{
+    <article class="admin-panel report-panel">
+        <h2>Monthly Collection — @DateTime.Today.Year</h2>
+        <svg class="line-chart-svg full" viewBox="0 0 1040 240" role="img" aria-label="Monthly collection chart">
+            <g class="chart-gridlines">
+                <path d="M50 18H1025M50 70H1025M50 122H1025M50 174H1025M50 226H1025" />
+                <path d="M50 18V226M135 18V226M220 18V226M305 18V226M390 18V226M475 18V226M560 18V226M645 18V226M730 18V226M815 18V226M900 18V226M985 18V226" />
+            </g>
+            <path class="chart-axis" d="M50 18V226H1025" />
+            <g class="chart-labels">
+                <text x="38" y="230">0</text>
+                <text x="38" y="178">1</text>
+                <text x="38" y="126">2</text>
+                <text x="38" y="74">3</text>
+                <text x="38" y="22">4</text>
+                <text x="86" y="236">Jan</text>
+                <text x="171" y="236">Feb</text>
+                <text x="256" y="236">Mar</text>
+                <text x="341" y="236">Apr</text>
+                <text x="426" y="236">May</text>
+                <text x="511" y="236">Jun</text>
+                <text x="596" y="236">Jul</text>
+                <text x="681" y="236">Aug</text>
+                <text x="766" y="236">Sep</text>
+                <text x="851" y="236">Oct</text>
+                <text x="936" y="236">Nov</text>
+                <text x="1001" y="236">Dec</text>
+            </g>
+        </svg>
+    </article>
+
+    <article class="admin-panel report-panel">
+        <h2>Payment Records</h2>
+        <ReportTable>
+            <Header>
+                <tr><th>Date</th><th>Tenant</th><th>Amount</th><th>Method</th><th>Receipt</th></tr>
+            </Header>
+            <Rows>
+                @foreach (var payment in payments)
+                {
+                    <tr>
+                        <td>@payment.CreatedUtc.ToString("dd MMM yyyy")</td>
+                        <td>@payment.Tenant?.FullName</td>
+                        <td>₹@payment.PaymentAmount.ToString("N0")</td>
+                        <td>@payment.PaymentMethod</td>
+                        <td>@payment.ReceiptNumber</td>
+                    </tr>
+                }
+            </Rows>
+        </ReportTable>
+    </article>
+}
+else if (reportTab == "pending")
+{
+    <article class="admin-panel report-panel">
+        <h2>Pending Payments (@PendingBills.Count)</h2>
+        <ReportTable>
+            <Header>
+                <tr><th>Tenant</th><th>Room</th><th>Month</th><th>Due Amount</th><th>Due Date</th><th>Status</th></tr>
+            </Header>
+            <Rows>
+                @foreach (var bill in PendingBills)
+                {
+                    <tr>
+                        <td>@bill.Tenant?.FullName</td>
+                        <td>Room @bill.Tenant?.Room?.RoomNumber</td>
+                        <td>@bill.BillMonth</td>
+                        <td>₹@Math.Max(bill.TotalAmount - bill.PaidAmount, 0).ToString("N0")</td>
+                        <td>@bill.DueDate.ToString("dd MMM yyyy")</td>
+                        <td><span class="badge @StatusBadge(bill.Status)">@bill.Status</span></td>
+                    </tr>
+                }
+            </Rows>
+        </ReportTable>
+    </article>
+}
+else if (reportTab == "profit")
+{
+    <div class="admin-metric-grid">
+        <article class="admin-metric-card wide">
+            <div>
+                <span>Revenue This Month</span>
+                <strong>₹@CurrentMonthRevenue.ToString("N0")</strong>
+            </div>
+            <span class="metric-icon green rupee-icon" aria-hidden="true"></span>
+        </article>
+        <article class="admin-metric-card wide">
+            <div>
+                <span>Expenses This Month</span>
+                <strong>₹@CurrentMonthExpenses.ToString("N0")</strong>
+            </div>
+            <span class="metric-icon orange wallet-icon" aria-hidden="true"></span>
+        </article>
+        <article class="admin-metric-card wide">
+            <div>
+                <span>Net Profit</span>
+                <strong>₹@CurrentMonthProfit.ToString("N0")</strong>
+            </div>
+            <span class="metric-icon @(CurrentMonthProfit >= 0 ? "green" : "red") chart-icon" aria-hidden="true"></span>
+        </article>
+    </div>
+    <article class="admin-panel report-panel">
+        <h2>Expense Records</h2>
+        <ReportTable>
+            <Header>
+                <tr><th>Date</th><th>Category</th><th>Title</th><th>Amount</th><th>Notes</th></tr>
+            </Header>
+            <Rows>
+                @foreach (var expense in expenses)
+                {
+                    <tr>
+                        <td>@expense.ExpenseDate.ToString("dd MMM yyyy")</td>
+                        <td><span class="badge neutral">@Label(expense.Category)</span></td>
+                        <td>@expense.Title</td>
+                        <td>₹@expense.Amount.ToString("N0")</td>
+                        <td>@expense.Notes</td>
+                    </tr>
+                }
+            </Rows>
+        </ReportTable>
+    </article>
+}
+else if (reportTab == "occupancy")
+{
+    <article class="admin-panel report-panel">
+        <h2>Room Occupancy</h2>
+        <div class="occupancy-bars">
+            @foreach (var room in rooms)
+            {
+                <div class="occupancy-bar-group">
+                    <div class="bar-pair">
+                        <span class="bar occupied" style="@HeightStyle(room.OccupiedBeds)" title="Occupied: @room.OccupiedBeds"></span>
+                        <span class="bar available" style="@HeightStyle(Math.Max(room.TotalBeds - room.OccupiedBeds, 0))" title="Available: @Math.Max(room.TotalBeds - room.OccupiedBeds, 0)"></span>
+                    </div>
+                    <small>Room @room.RoomNumber</small>
+                </div>
+            }
+        </div>
+        <ReportTable>
+            <Header>
+                <tr><th>Room</th><th>Total Beds</th><th>Occupied</th><th>Available</th><th>Rate</th></tr>
+            </Header>
+            <Rows>
+                @foreach (var room in rooms)
+                {
+                    var available = Math.Max(room.TotalBeds - room.OccupiedBeds, 0);
+                    <tr>
+                        <td>Room @room.RoomNumber</td>
+                        <td>@room.TotalBeds</td>
+                        <td>@room.OccupiedBeds</td>
+                        <td>@available</td>
+                        <td>@OccupancyRate(room)%</td>
+                    </tr>
+                }
+            </Rows>
+        </ReportTable>
+    </article>
+}
+else
+{
+    <article class="admin-panel report-panel">
+        <h2>Tenant Payment History</h2>
+        <ReportTable>
+            <Header>
+                <tr><th>Tenant</th><th>Phone</th><th>Room</th><th>Total Bills</th><th>Paid</th><th>Pending</th></tr>
+            </Header>
+            <Rows>
+                @foreach (var tenant in tenants)
+                {
+                    var tenantBills = bills.Where(bill => bill.TenantId == tenant.Id).ToList();
+                    var total = tenantBills.Sum(bill => bill.TotalAmount);
+                    var paid = tenantBills.Sum(bill => bill.PaidAmount);
+                    <tr>
+                        <td>@tenant.FullName</td>
+                        <td>@tenant.Phone</td>
+                        <td>Room @tenant.Room?.RoomNumber</td>
+                        <td>₹@total.ToString("N0")</td>
+                        <td>₹@paid.ToString("N0")</td>
+                        <td>₹@Math.Max(total - paid, 0).ToString("N0")</td>
+                    </tr>
+                }
+            </Rows>
+        </ReportTable>
+    </article>
+}
+
+@code {
+    private List<Room> rooms = [];
+    private List<Bill> bills = [];
+    private List<Payment> payments = [];
+    private List<Tenant> tenants = [];
+    private List<Expense> expenses = [];
+    private string reportTab = "collection";
+    private int currentMonth = DateTime.Today.Month;
+    private int currentYear = DateTime.Today.Year;
+
+    private List<Bill> PendingBills => bills
+        .Where(bill => bill.Status is "pending" or "overdue" or "partially_paid")
+        .ToList();
+
+    protected override async Task OnInitializedAsync()
+    {
+        rooms = await Repository.GetRoomsAsync();
+        bills = await Repository.GetBillsAsync();
+        payments = await Repository.GetPaymentsAsync();
+        tenants = await Repository.GetTenantsAsync();
+        expenses = await Repository.GetExpensesAsync();
+    }
+
+    private decimal CurrentMonthRevenue => payments
+        .Where(payment => payment.PaymentStatus == "success" && payment.CreatedUtc.Month == currentMonth && payment.CreatedUtc.Year == currentYear)
+        .Sum(payment => payment.PaymentAmount);
+
+    private decimal CurrentMonthExpenses => expenses
+        .Where(expense => expense.ExpenseDate.Month == currentMonth && expense.ExpenseDate.Year == currentYear)
+        .Sum(expense => expense.Amount);
+
+    private decimal CurrentMonthProfit => CurrentMonthRevenue - CurrentMonthExpenses;
+
+    private string TabClass(string tab) => reportTab == tab ? "active" : string.Empty;
+
+    private static string Label(string value) => value.Replace("_", " ");
+
+    private string HeightStyle(int value)
+    {
+        var maxBeds = Math.Max(rooms.Count == 0 ? 1 : rooms.Max(room => room.TotalBeds), 1);
+        var percent = value <= 0 ? 0 : Math.Max(10, value * 100 / maxBeds);
+        return $"height:{percent}%";
+    }
+
+    private static int OccupancyRate(Room room)
+    {
+        return room.TotalBeds == 0 ? 0 : (int)Math.Round(room.OccupiedBeds * 100d / room.TotalBeds);
+    }
+
+    private static string StatusBadge(string status) => status switch
+    {
+        "paid" => "success",
+        "partially_paid" => "warning",
+        "overdue" => "danger",
+        "pending" => "warning",
+        _ => "neutral"
+    };
+}

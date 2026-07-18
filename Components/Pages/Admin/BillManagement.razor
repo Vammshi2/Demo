@@ -1,0 +1,247 @@
+@page "/admin/BillManagement"
+@layout AdminLayout
+@attribute [Authorize(Roles = AppRoles.Admin)]
+@inject IHostelRepository Repository
+@inject IEmailNotificationService EmailNotifications
+@inject AuthenticationStateProvider AuthStateProvider
+
+<DynamicPageTitle Prefix="Bill Management" />
+
+<div class="admin-page-title with-action">
+    <div>
+        <h1>Bill Management</h1>
+        <p>Generate and manage tenant bills</p>
+    </div>
+    <div class="actions">
+        <button class="button outline compact" @onclick="AutoGenerateAsync">↯ Auto Generate</button>
+        <button class="button primary compact" @onclick="() => showForm = true"><span aria-hidden="true">＋</span> New Bill</button>
+    </div>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(message))
+{
+    <div class="alert success">@message</div>
+}
+@if (!string.IsNullOrWhiteSpace(error))
+{
+    <div class="alert danger">@error</div>
+}
+
+@if (showForm)
+{
+    <EditForm Model="form" OnValidSubmit="SaveAsync" FormName="bill-management">
+        <DataAnnotationsValidator />
+        <div class="admin-panel form-grid admin-form-panel">
+            <div class="form-grid two">
+                <div class="field">
+                    <label>Tenant</label>
+                    <InputSelect @bind-Value="form.TenantId">
+                        <option value="@Guid.Empty">Select tenant</option>
+                        @foreach (var tenant in tenants.Where(tenant => tenant.Status == "active" && tenant.SecurityDepositStatus == "paid"))
+                        {
+                            <option value="@tenant.Id">@tenant.FullName · Room @tenant.Room?.RoomNumber</option>
+                        }
+                    </InputSelect>
+                </div>
+                <div class="field">
+                    <label>Due date</label>
+                    <InputDate @bind-Value="form.DueDate" />
+                </div>
+            </div>
+            <div class="form-grid two">
+                <div class="field">
+                    <label>Month</label>
+                    <InputText @bind-Value="form.BillMonth" />
+                </div>
+                <div class="field">
+                    <label>Year</label>
+                    <InputNumber @bind-Value="form.BillYear" />
+                </div>
+            </div>
+            <div class="form-grid two">
+                <div class="field">
+                    <label>Rent amount</label>
+                    <InputNumber @bind-Value="form.RentAmount" />
+                </div>
+                <div class="field">
+                    <label>Electricity charges</label>
+                    <InputNumber @bind-Value="form.ElectricityCharges" />
+                </div>
+                <div class="field">
+                    <label>Maintenance charges</label>
+                    <InputNumber @bind-Value="form.MaintenanceCharges" />
+                </div>
+                <div class="field">
+                    <label>Discount</label>
+                    <InputNumber @bind-Value="form.Discount" />
+                </div>
+            </div>
+            <div class="actions">
+                <button class="button primary" type="submit">Save bill</button>
+                <button class="button outline" type="button" @onclick="Cancel">Cancel</button>
+            </div>
+        </div>
+    </EditForm>
+}
+
+<div class="admin-filter-row">
+    <input class="search-input grow" placeholder="Search tenant..." @bind="search" @bind:event="oninput" />
+    <select class="search-input" @bind="statusFilter">
+        <option value="all">All Status</option>
+        <option value="pending">Pending</option>
+        <option value="paid">Paid</option>
+        <option value="partially_paid">Partially Paid</option>
+        <option value="overdue">Overdue</option>
+    </select>
+</div>
+
+@if (!FilteredBills.Any())
+{
+    <div class="admin-empty">
+        <span class="empty-icon bill-icon" aria-hidden="true"></span>
+        <p>No bills found.</p>
+    </div>
+}
+else
+{
+    <div class="admin-panel table-card">
+        <div class="table-wrap">
+            <table class="admin-table">
+                <thead>
+                    <tr>
+                        <th>Tenant</th>
+                        <th>Room</th>
+                        <th>Month</th>
+                        <th>Total</th>
+                        <th>Late Fee</th>
+                        <th>Paid</th>
+                        <th>Due Date</th>
+                        <th>Invoice</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var bill in FilteredBills)
+                    {
+                        <tr>
+                            <td><strong>@bill.Tenant?.FullName</strong></td>
+                            <td>Room @bill.Tenant?.Room?.RoomNumber</td>
+                            <td>@bill.BillMonth @bill.BillYear</td>
+                            <td>₹@bill.TotalAmount.ToString("N0")</td>
+                            <td>₹@bill.LateFeeAmount.ToString("N0")</td>
+                            <td>₹@bill.PaidAmount.ToString("N0")</td>
+                            <td>@bill.DueDate.ToString("dd MMM yyyy")</td>
+                            <td>
+                                <strong>@(string.IsNullOrWhiteSpace(bill.InvoiceNumber) ? "-" : bill.InvoiceNumber)</strong>
+                                <small class="table-subtext">@(bill.InvoiceSentUtc.HasValue ? $"Sent {bill.InvoiceSentUtc.Value:dd MMM}" : "Not sent")</small>
+                            </td>
+                            <td><span class="badge @StatusBadge(bill.Status)">@bill.Status</span></td>
+                            <td>
+                                <button class="button outline compact" @onclick="() => SendInvoiceAsync(bill)">Email Invoice</button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+}
+
+@code {
+    private List<Bill> bills = [];
+    private List<Tenant> tenants = [];
+    private HostelSetting? settings;
+    private BillForm form = new();
+    private bool showForm;
+    private string search = string.Empty;
+    private string statusFilter = "all";
+    private string? message;
+    private string? error;
+
+    private IEnumerable<Bill> FilteredBills => bills.Where(bill =>
+    {
+        var tenantName = bill.Tenant?.FullName ?? string.Empty;
+        var matchesSearch = string.IsNullOrWhiteSpace(search) || tenantName.Contains(search, StringComparison.OrdinalIgnoreCase);
+        var matchesStatus = statusFilter == "all" || bill.Status == statusFilter;
+        return matchesSearch && matchesStatus;
+    });
+
+    protected override async Task OnInitializedAsync()
+    {
+        await ReloadAsync();
+    }
+
+    private async Task ReloadAsync()
+    {
+        bills = await Repository.GetBillsAsync();
+        tenants = await Repository.GetTenantsAsync();
+        settings = await Repository.GetSettingsAsync();
+    }
+
+    private async Task SaveAsync()
+    {
+        if (form.TenantId == Guid.Empty)
+        {
+            return;
+        }
+
+        error = null;
+        try
+        {
+            await Repository.SaveBillAsync(form, await ActorAsync());
+            form = new BillForm();
+            showForm = false;
+            await ReloadAsync();
+        }
+        catch (InvalidOperationException exception) { error = exception.Message; }
+    }
+
+    private async Task AutoGenerateAsync()
+    {
+        var created = await Repository.AutoGenerateBillsAsync(await ActorAsync());
+        message = $"{created} hostel-fee bills generated. Tenants with unpaid deposits were skipped.";
+        await ReloadAsync();
+    }
+
+    private async Task SendInvoiceAsync(Bill bill)
+    {
+        if (settings is null)
+        {
+            return;
+        }
+
+        var sent = await EmailNotifications.SendInvoiceAsync(bill, settings);
+        if (sent)
+        {
+            await Repository.MarkInvoiceSentAsync(bill.Id, await ActorAsync());
+            message = $"Invoice sent to {bill.Tenant?.FullName}.";
+            await ReloadAsync();
+        }
+        else
+        {
+            message = "Invoice email is configured for secure delivery, but the provider did not accept this send.";
+        }
+    }
+
+    private void Cancel()
+    {
+        form = new BillForm();
+        showForm = false;
+    }
+
+    private static string StatusBadge(string status) => status switch
+    {
+        "paid" => "success",
+        "partially_paid" => "warning",
+        "overdue" => "danger",
+        "pending" => "warning",
+        _ => "neutral"
+    };
+
+    private async Task<string> ActorAsync()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        return state.User.Identity?.Name ?? "admin";
+    }
+}

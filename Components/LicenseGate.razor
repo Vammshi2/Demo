@@ -1,0 +1,60 @@
+@inject ILicenseService LicenseService
+@implements IAsyncDisposable
+
+@if (status is null)
+{
+    <div class="license-loading" role="status">
+        <span class="license-spinner" aria-hidden="true"></span>
+        <p>Verifying this installation...</p>
+    </div>
+}
+else if (!status.AllowsAccess)
+{
+    <LicenseSuspended Status="status" />
+}
+else
+{
+    @ChildContent
+}
+
+@code {
+    [Parameter, EditorRequired]
+    public RenderFragment? ChildContent { get; set; }
+
+    private LicenseSnapshot? status;
+    private readonly CancellationTokenSource stop = new();
+    private Task? monitorTask;
+
+    protected override async Task OnInitializedAsync()
+    {
+        status = await LicenseService.GetStatusAsync();
+        monitorTask = MonitorLicenseAsync();
+    }
+
+    private async Task MonitorLicenseAsync()
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromMinutes(1));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(stop.Token))
+            {
+                status = await LicenseService.GetStatusAsync(forceRefresh: true, cancellationToken: stop.Token);
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (OperationCanceledException) when (stop.IsCancellationRequested)
+        {
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        stop.Cancel();
+        if (monitorTask is not null)
+        {
+            try { await monitorTask; }
+            catch (OperationCanceledException) { }
+        }
+        stop.Dispose();
+    }
+}

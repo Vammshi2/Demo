@@ -1,0 +1,44 @@
+@inject IHostelRepository Repository
+
+@if (testimonials.Count > 0)
+{
+<section class="section testimonials-section">
+    <div class="section-title">
+        <p class="eyebrow orange">TESTIMONIALS</p>
+        <h2>What Our Tenants Say</h2>
+    </div>
+
+    <div class="testimonial-grid">
+        @foreach (var testimonial in testimonials)
+        {
+            <article class="testimonial-card">
+                <div class="stars" aria-label="@testimonial.Rating out of 5 stars">
+                    @for (var i = 1; i <= 5; i++)
+                    {
+                        <span class="@(i <= testimonial.Rating ? "filled" : "empty")">★</span>
+                    }
+                </div>
+                <p>"@testimonial.Quote"</p>
+                <div class="tenant">
+                    <span>@InitialFor(testimonial.Name)</span>
+                    <div>
+                        <strong>@testimonial.Name</strong>
+                        <small>@testimonial.Role</small>
+                    </div>
+                </div>
+            </article>
+        }
+    </div>
+</section>
+}
+
+@code {
+    private List<Testimonial> testimonials = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        testimonials = await Repository.GetTestimonialsAsync(publishedOnly: true);
+    }
+
+    private static string InitialFor(string name) => string.IsNullOrWhiteSpace(name) ? "R" : name.Trim()[..1].ToUpperInvariant();
+}

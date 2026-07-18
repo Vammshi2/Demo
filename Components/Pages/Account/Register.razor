@@ -1,0 +1,74 @@
+@page "/Register"
+@inject IHostelSettingsReader SettingsReader
+
+<PageTitle>Register | @(settings?.HostelName ?? "Hostel")</PageTitle>
+
+<section class="section">
+    <div class="card auth-card">
+        <p class="eyebrow">Create account</p>
+        <h1>Register</h1>
+        <p class="muted">Create your resident portal account.</p>
+
+        @if (!string.IsNullOrWhiteSpace(Error))
+        {
+            <div class="alert danger">@ErrorMessage</div>
+        }
+
+        @if (settings?.PublicRegistrationEnabled == true)
+        {
+        <form method="post" action="/account/register" class="form-grid">
+            <AntiforgeryToken />
+            <div class="field">
+                <label for="fullName">Full name</label>
+                <input id="fullName" name="FullName" required maxlength="160" autocomplete="name" />
+            </div>
+            <div class="field">
+                <label for="email">Email</label>
+                <input id="email" name="Email" type="email" required autocomplete="email" />
+            </div>
+            <div class="field">
+                <label for="phone">Phone</label>
+                <input id="phone" name="Phone" autocomplete="tel" />
+            </div>
+            <div class="field">
+                <label for="password">Password</label>
+                <input id="password" name="Password" type="password" required minlength="10" autocomplete="new-password" />
+            </div>
+            <div class="field">
+                <label for="confirmPassword">Confirm password</label>
+                <input id="confirmPassword" name="ConfirmPassword" type="password" required minlength="10" autocomplete="new-password" />
+            </div>
+            <button class="button primary" type="submit">Create account</button>
+        </form>
+        }
+        else
+        {
+            <div class="auth-closed-state">
+                <strong>Registration is managed by the property.</strong>
+                <p>Ask the administrator to create or activate your resident account.</p>
+                <a class="button primary" href="/Login">Go to sign in</a>
+            </div>
+        }
+    </div>
+</section>
+
+@code {
+    [SupplyParameterFromQuery(Name = "error")]
+    public string? Error { get; set; }
+
+    private HostelSetting? settings;
+
+    protected override async Task OnInitializedAsync()
+    {
+        settings = await SettingsReader.GetSettingsAsync();
+    }
+
+    private string ErrorMessage => Error switch
+    {
+        "token" => "Your registration session expired. Refresh the page and submit the form again.",
+        "password" => "Registration failed. Check the password rules and confirmation value.",
+        "exists" => "An account with that email may already exist.",
+        "closed" => "Public registration is disabled. Ask the property administrator to create your account.",
+        _ => "Registration failed. Check the form and try again."
+    };
+}

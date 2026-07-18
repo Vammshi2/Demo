@@ -1,0 +1,63 @@
+@page "/Setup"
+@inject UserManager<ApplicationUser> UserManager
+@inject IHostelSettingsReader SettingsReader
+@inject ISetupTokenValidator SetupTokenValidator
+
+<DynamicPageTitle Prefix="Owner Setup" />
+
+<section class="section setup-page">
+    <div class="setup-card">
+        <div class="setup-heading">
+            <span class="brand-mark"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20V6.5A2.5 2.5 0 0 1 7.5 4h9A2.5 2.5 0 0 1 19 6.5V20" /><path d="M3.5 20h17" /><path d="M8 9h2.5M8 13h2.5M13.5 9H16M13.5 13H16" /><path d="M10 20v-3.5h4V20" /></svg></span>
+            <div><p class="eyebrow orange">FIRST-RUN SETUP</p><h1>Set up your property</h1><p>Create the first owner account and basic PG identity. This page closes permanently after setup.</p></div>
+        </div>
+
+        @if (hasAdmin)
+        {
+            <div class="alert success">Setup is complete. An administrator account already exists.</div>
+            <a class="button primary" href="/Login">Go to sign in</a>
+        }
+        else if (!SetupTokenValidator.IsConfigured)
+        {
+            <div class="alert danger">Owner activation is not configured for this deployment. Ask the licensing authority for a setup token.</div>
+        }
+        else if (!SetupTokenValidator.Validate(Token))
+        {
+            <div class="alert danger">This owner activation link is invalid or incomplete. Use the link issued by the licensing authority.</div>
+        }
+        else
+        {
+            @if (!string.IsNullOrWhiteSpace(Error))
+            {
+                <div class="alert danger">@ErrorMessage</div>
+            }
+            <form method="post" action="/setup/complete" class="form-grid">
+                <AntiforgeryToken />
+                <input type="hidden" name="SetupToken" value="@Token" />
+                <div class="form-grid two"><div class="field"><label for="propertyName">PG / Hostel Name</label><input id="propertyName" name="PropertyName" value="@settings?.HostelName" required maxlength="160" /></div><div class="field"><label for="ownerName">Owner Name</label><input id="ownerName" name="OwnerName" required maxlength="160" autocomplete="name" /></div></div>
+                <div class="form-grid two"><div class="field"><label for="email">Owner Email</label><input id="email" name="Email" type="email" required autocomplete="email" /></div><div class="field"><label for="phone">Phone</label><input id="phone" name="Phone" autocomplete="tel" /></div></div>
+                <div class="form-grid two"><div class="field"><label for="password">Password</label><input id="password" name="Password" type="password" required minlength="10" autocomplete="new-password" /></div><div class="field"><label for="confirmPassword">Confirm Password</label><input id="confirmPassword" name="ConfirmPassword" type="password" required minlength="10" autocomplete="new-password" /></div></div>
+                <button class="button primary" type="submit">Create Owner Account</button>
+            </form>
+        }
+    </div>
+</section>
+
+@code {
+    [SupplyParameterFromQuery(Name = "error")]
+    public string? Error { get; set; }
+
+    [SupplyParameterFromQuery(Name = "token")]
+    public string? Token { get; set; }
+
+    private bool hasAdmin;
+    private HostelSetting? settings;
+
+    protected override async Task OnInitializedAsync()
+    {
+        hasAdmin = (await UserManager.GetUsersInRoleAsync(AppRoles.Admin)).Count > 0;
+        settings = await SettingsReader.GetSettingsAsync();
+    }
+
+    private string ErrorMessage => Error switch { "closed" => "Setup has already been completed.", "activation" => "The owner activation token is invalid.", "password" => "Use a matching password with at least 10 characters, uppercase, lowercase, number, and symbol.", "account" => "The owner account could not be created. Check the details and try again.", _ => "Setup could not be completed." };
+}

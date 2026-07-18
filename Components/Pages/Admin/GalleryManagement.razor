@@ -1,0 +1,179 @@
+@page "/admin/gallery"
+@layout AdminLayout
+@attribute [Authorize(Roles = AppRoles.Admin)]
+@inject IHostelRepository Repository
+@inject AuthenticationStateProvider AuthStateProvider
+@inject IPublicImageStorage ImageStorage
+
+<DynamicPageTitle Prefix="Gallery Management" />
+
+<div class="admin-page-title with-action">
+    <div>
+        <h1>Gallery Management</h1>
+        <p>Manage images displayed on the public gallery page</p>
+    </div>
+    <button class="button primary compact" @onclick="StartCreate"><span aria-hidden="true">＋</span> Add Image</button>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(saveError))
+{
+    <div class="alert danger">@saveError</div>
+}
+
+@if (showForm)
+{
+    <EditForm Model="form" OnValidSubmit="SaveAsync" FormName="gallery-management">
+        <DataAnnotationsValidator />
+        <div class="admin-panel form-grid admin-form-panel">
+            <div class="form-grid two">
+                <div class="field">
+                    <label>Album Name</label>
+                    <InputText @bind-Value="form.Album" placeholder="e.g. Rooms, Facilities, Events" />
+                    <ValidationMessage For="() => form.Album" />
+                </div>
+                <div class="field">
+                    <label>Caption (Alt Text)</label>
+                    <InputText @bind-Value="form.Caption" placeholder="Brief description of the image" />
+                    <ValidationMessage For="() => form.Caption" />
+                </div>
+            </div>
+            <div class="form-grid two">
+                <div class="field">
+                    <label>Sort Order</label>
+                    <InputNumber @bind-Value="form.SortOrder" />
+                </div>
+                <div class="field">
+                    <label class="button outline compact" style="margin-top: 2rem;">
+                        <InputCheckbox @bind-Value="form.IsPublished" />
+                        Publish immediately
+                    </label>
+                </div>
+            </div>
+            <div class="field">
+                <label>Upload Image</label>
+                <InputFile OnChange="HandleImageUpload" accept="image/*" />
+                @if (!string.IsNullOrEmpty(form.ImageUrl))
+                {
+                    <div style="margin-top: 10px;">
+                        <img src="@form.ImageUrl" alt="Preview" style="max-height: 150px; border-radius: 4px;" />
+                    </div>
+                }
+            </div>
+            
+            <div class="actions">
+                <button class="button primary" type="submit">Save image</button>
+                <button class="button outline" type="button" @onclick="Cancel">Cancel</button>
+            </div>
+        </div>
+    </EditForm>
+}
+
+@if (images.Count == 0)
+{
+    <div class="admin-empty">
+        <span class="empty-icon image-icon" aria-hidden="true"></span>
+        <p>No gallery images found. Upload some to showcase your hostel.</p>
+    </div>
+}
+else
+{
+    <div class="gallery-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 1rem; margin-top: 2rem;">
+        @foreach (var image in images)
+        {
+            <article class="admin-gallery-card" style="background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                <img src="@image.ImageUrl" alt="@image.Caption" style="width: 100%; height: 180px; object-fit: cover;" />
+                <div style="padding: 1rem;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                        <span class="badge @(image.IsPublished ? "success" : "neutral")">@(image.IsPublished ? "Published" : "Hidden")</span>
+                        <span style="font-size: 0.8rem; color: #666;">@image.Album</span>
+                    </div>
+                    <p style="margin: 0 0 1rem 0; font-size: 0.95rem;">@image.Caption</p>
+                    
+                    <div class="admin-card-actions" style="display: flex; justify-content: space-between;">
+                        <button class="admin-card-button" @onclick="() => StartEdit(image)">✎ Edit</button>
+                        <button class="icon-danger-button" title="Delete image" @onclick="() => DeleteAsync(image.Id)">⌫</button>
+                    </div>
+                </div>
+            </article>
+        }
+    </div>
+}
+
+@code {
+    private List<GalleryImage> images = [];
+    private GalleryForm form = new();
+    private bool showForm;
+    private string? saveError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        images = await Repository.GetGalleryAsync(publishedOnly: false);
+    }
+
+    private void StartCreate()
+    {
+        form = new GalleryForm();
+        showForm = true;
+    }
+
+    private void StartEdit(GalleryImage image)
+    {
+        form = new GalleryForm
+        {
+            Id = image.Id,
+            Album = image.Album,
+            Caption = image.Caption,
+            ImageUrl = image.ImageUrl,
+            IsPublished = image.IsPublished,
+            SortOrder = image.SortOrder
+        };
+        showForm = true;
+    }
+
+    private void Cancel() => showForm = false;
+
+    private async Task HandleImageUpload(InputFileChangeEventArgs e)
+    {
+        saveError = null;
+        try
+        {
+            form.ImageUrl = await ImageStorage.SaveAsync(e.File, "gallery");
+        }
+        catch (InvalidDataException exception)
+        {
+            form.ImageUrl = string.Empty;
+            saveError = exception.Message;
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        if (string.IsNullOrEmpty(form.ImageUrl))
+        {
+            return;
+        }
+        
+        try
+        {
+            await Repository.SaveGalleryImageAsync(form, await ActorAsync());
+            images = await Repository.GetGalleryAsync(publishedOnly: false);
+            showForm = false;
+        }
+        catch (InvalidOperationException exception)
+        {
+            saveError = exception.Message;
+        }
+    }
+
+    private async Task DeleteAsync(Guid id)
+    {
+        await Repository.DeleteGalleryImageAsync(id, await ActorAsync());
+        images = await Repository.GetGalleryAsync(publishedOnly: false);
+    }
+
+    private async Task<string> ActorAsync()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        return state.User.Identity?.Name ?? "admin";
+    }
+}

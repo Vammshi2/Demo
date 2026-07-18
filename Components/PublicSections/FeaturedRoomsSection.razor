@@ -1,0 +1,54 @@
+@inject IHostelRepository Repository
+
+<section class="section featured-rooms-section">
+    <div class="section-title">
+        <p class="eyebrow orange">ACCOMMODATION</p>
+        <h2>Choose Your Room</h2>
+    </div>
+
+    <div class="featured-room-grid">
+        @foreach (var room in rooms.Take(3))
+        {
+            <article class="featured-room-card">
+                <img src="@ImageFor(room)" alt="@($"Room {room.RoomNumber}")" />
+                <div class="featured-room-body">
+                    <h3>@ToTitle(room.RoomType)</h3>
+                    <div class="room-meta compact-meta">
+                        <span>Room @room.RoomNumber · @Math.Max(room.TotalBeds - room.OccupiedBeds, 0) available</span>
+                        <strong>₹ @room.MonthlyRent.ToString("N0")/mo</strong>
+                    </div>
+                    <div class="amenity-pills">
+                        @foreach (var amenity in AmenitiesFor(room))
+                        {
+                            <span>@amenity</span>
+                        }
+                    </div>
+                    <a class="button outline full-width" href="/contact">Enquire Now <span aria-hidden="true">→</span></a>
+                </div>
+            </article>
+        }
+    </div>
+
+    <div class="center-action">
+        <a href="/rooms">View All Rooms <span aria-hidden="true">→</span></a>
+    </div>
+</section>
+
+@code {
+    private List<Room> rooms = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        rooms = await Repository.GetPublicRoomsAsync();
+    }
+
+    private static IEnumerable<string> AmenitiesFor(Room room) => room.Amenities
+        .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+        .Take(4);
+
+    private static string ToTitle(string value) => string.Join(' ', value.Split('_', StringSplitOptions.RemoveEmptyEntries).Select(word => char.ToUpperInvariant(word[0]) + word[1..])) + " Room";
+
+    private static string ImageFor(Room room) => string.IsNullOrWhiteSpace(room.CoverImageUrl)
+        ? "https://images.unsplash.com/photo-1555854877-bab0e564b8d5?auto=format&fit=crop&w=1000&q=80"
+        : room.CoverImageUrl;
+}

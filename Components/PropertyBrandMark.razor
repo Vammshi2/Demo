@@ -1,0 +1,29 @@
+<span class="brand-mark property-brand-mark @BrandClass @CssClass" aria-hidden="true">
+    @if (PropertyModel == "co_living")
+    {
+        <svg viewBox="0 0 24 24">
+            <path d="M3.5 11.5 12 4l8.5 7.5" />
+            <path d="M5.5 10.5V20h13v-9.5" />
+            <circle cx="9" cy="12.5" r="1.5" />
+            <circle cx="15" cy="12.5" r="1.5" />
+            <path d="M6.8 18c.4-1.7 1.2-2.6 2.2-2.6s1.8.9 2.2 2.6M12.8 18c.4-1.7 1.2-2.6 2.2-2.6s1.8.9 2.2 2.6" />
+        </svg>
+    }
+    else
+    {
+        <svg viewBox="0 0 24 24">
+            <path d="M5 20V6.5A2.5 2.5 0 0 1 7.5 4h9A2.5 2.5 0 0 1 19 6.5V20" />
+            <path d="M3.5 20h17" />
+            <path d="M8 9h2.5M8 13h2.5M13.5 9H16M13.5 13H16" />
+            <path d="M10 20v-3.5h4V20" />
+        </svg>
+    }
+</span>
+
+@code {
+    [Parameter] public string PropertyModel { get; set; } = "pg";
+    [Parameter] public string ResidentCategory { get; set; } = "mixed";
+    [Parameter] public string CssClass { get; set; } = string.Empty;
+
+    private string BrandClass => $"model-{PropertyModel} residents-{ResidentCategory}";
+}

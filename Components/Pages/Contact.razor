@@ -1,0 +1,112 @@
+@page "/contact"
+@inject IHostelRepository Repository
+@inject IHostelSettingsReader SettingsReader
+@inject IEmailNotificationService EmailNotifications
+
+<PageTitle>Contact | @(settings?.HostelName ?? "Hostel")</PageTitle>
+
+<section class="section page-section">
+    <div class="section-title">
+        <p class="eyebrow orange">GET IN TOUCH</p>
+        <h1>Contact Us</h1>
+        <p>Have questions? We'd love to hear from you.</p>
+    </div>
+
+    @if (submitted)
+    {
+        <div class="alert success contact-alert">Your enquiry has been saved. The admin team can respond from the secure dashboard.</div>
+    }
+
+    <div class="contact-layout">
+        <div class="contact-info">
+            <article>
+                <span>☎</span>
+                <div>
+                    <p>Phone</p>
+                    <strong>@ContactPhone</strong>
+                </div>
+            </article>
+            <article>
+                <span>✉</span>
+                <div>
+                    <p>Email</p>
+                    <strong>@ContactEmail</strong>
+                </div>
+            </article>
+            <article>
+                <span>⌖</span>
+                <div>
+                    <p>Address</p>
+                    <strong>@ContactAddress</strong>
+                </div>
+            </article>
+            <a class="whatsapp-button" href="@WhatsAppUrl">☏ Chat on WhatsApp</a>
+        </div>
+
+        <EditForm Model="form" OnValidSubmit="SubmitAsync" FormName="contact">
+            <DataAnnotationsValidator />
+            <div class="contact-form">
+                <h2>Send us a message</h2>
+                <div class="form-grid two">
+                    <div class="field">
+                        <label for="name">Full Name *</label>
+                        <InputText id="name" placeholder="John Doe" @bind-Value="form.Name" />
+                        <ValidationMessage For="() => form.Name" />
+                    </div>
+                    <div class="field">
+                        <label for="phone">Phone *</label>
+                        <InputText id="phone" placeholder="Enter phone number" @bind-Value="form.Phone" />
+                        <ValidationMessage For="() => form.Phone" />
+                    </div>
+                </div>
+                <div class="field">
+                    <label for="email">Email</label>
+                    <InputText id="email" placeholder="john@example.com" type="email" @bind-Value="form.Email" />
+                    <ValidationMessage For="() => form.Email" />
+                </div>
+                <div class="field">
+                    <label for="message">Message</label>
+                    <InputTextArea id="message" placeholder="Tell us about your requirements..." @bind-Value="form.Message" />
+                    <ValidationMessage For="() => form.Message" />
+                </div>
+                <button class="button primary full-width" type="submit">Send Enquiry</button>
+            </div>
+        </EditForm>
+    </div>
+</section>
+
+@code {
+    private ContactForm form = new();
+    private HostelSetting? settings;
+    private bool submitted;
+
+    protected override async Task OnInitializedAsync()
+    {
+        settings = await SettingsReader.GetSettingsAsync();
+    }
+
+    private async Task SubmitAsync()
+    {
+        await Repository.CreateEnquiryAsync(form);
+        await EmailNotifications.SendEnquiryReceivedAsync(form);
+        form = new ContactForm();
+        submitted = true;
+    }
+
+    private string ContactPhone => ValueOrDefault(settings?.ContactPhone, "Phone not configured");
+    private string ContactEmail => ValueOrDefault(settings?.ContactEmail, "Email not configured");
+    private string ContactAddress => ValueOrDefault(settings?.Address, "Address not configured");
+
+    private string WhatsAppUrl
+    {
+        get
+        {
+            var whatsapp = string.IsNullOrWhiteSpace(settings?.WhatsAppPhone) ? ContactPhone : settings.WhatsAppPhone;
+            var digits = new string(whatsapp.Where(char.IsDigit).ToArray());
+            return string.IsNullOrWhiteSpace(digits) ? "#" : $"https://wa.me/{digits}";
+        }
+    }
+
+    private static string ValueOrDefault(string? value, string fallback) =>
+        string.IsNullOrWhiteSpace(value) ? fallback : value.Trim();
+}

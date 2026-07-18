@@ -1,0 +1,144 @@
+@page "/apply"
+@inject IHostelRepository Repository
+@inject IHostelSettingsReader SettingsReader
+
+<PageTitle>Apply | @(settings?.HostelName ?? "Hostel")</PageTitle>
+
+<section class="section page-section application-page">
+    <div class="section-title">
+        <p class="eyebrow orange">RESIDENT APPLICATION</p>
+        <h1>Apply for a room</h1>
+        <p>Submit your details for review. Room and bed allocation is confirmed by the property team.</p>
+    </div>
+
+    @if (settings is null)
+    {
+        <div class="application-result"><p class="muted">Loading application form...</p></div>
+    }
+    else if (!string.IsNullOrWhiteSpace(successNumber))
+    {
+        <div class="application-result">
+            <span class="status-check" aria-hidden="true">✓</span>
+            <h2>Application received</h2>
+            <p>Your reference is <strong>@successNumber</strong>. The property team will confirm the room allocation, security deposit, and joining process.</p>
+            <a class="button outline" href="/rooms">View rooms</a>
+        </div>
+    }
+    else if (settings?.PublicRegistrationEnabled != true)
+    {
+        <div class="empty-state">
+            <h2>Online applications are closed</h2>
+            <p>Please contact the property team to apply.</p>
+            <a class="button primary" href="/contact">Contact us</a>
+        </div>
+    }
+    else
+    {
+        @if (!string.IsNullOrWhiteSpace(error))
+        {
+            <div class="alert danger">@error</div>
+        }
+        <EditForm Model="form" OnValidSubmit="SubmitAsync" FormName="tenant-application">
+            <DataAnnotationsValidator />
+            <div class="public-form-shell">
+                <div class="public-form-intro">
+                    <PropertyBrandMark PropertyModel="@settings.PropertyModel" ResidentCategory="@settings.ResidentCategory" />
+                    <p class="eyebrow">@PropertyLabel</p>
+                    <h2>Start your application</h2>
+                    <p>Choose a room type and review its monthly price and current bed availability. The admin assigns the exact room and bed.</p>
+                    <div class="application-points">
+                        <span><b>1</b> Choose a room type</span>
+                        <span><b>2</b> Admin allocates room and bed</span>
+                        <span><b>3</b> Pay the admin-set deposit first</span>
+                    </div>
+                </div>
+                <div class="public-form-fields">
+                    <div class="form-grid two">
+                        <div class="field"><label>Full name</label><InputText @bind-Value="form.FullName" /><ValidationMessage For="() => form.FullName" /></div>
+                        <div class="field"><label>Phone</label><InputText @bind-Value="form.Phone" /><ValidationMessage For="() => form.Phone" /></div>
+                    </div>
+                    <div class="form-grid two">
+                        <div class="field"><label>Email</label><InputText type="email" @bind-Value="form.Email" /><ValidationMessage For="() => form.Email" /></div>
+                        <div class="field"><label>Occupation</label><InputText @bind-Value="form.Occupation" placeholder="Student, software engineer..." /></div>
+                    </div>
+                    <div class="field">
+                        <label>Room type</label>
+                        <InputSelect @bind-Value="form.PreferredRoomType">
+                            <option value="any">Select room type</option>
+                            @foreach (var plan in AvailablePlans)
+                            {
+                                <option value="@plan.RoomType">@RoomTypeLabel(plan.RoomType) · ₹@plan.MonthlyRent.ToString("N0")/mo · @plan.AvailableBeds beds available</option>
+                            }
+                        </InputSelect>
+                        <ValidationMessage For="() => form.PreferredRoomType" />
+                    </div>
+                    @if (SelectedPlan is not null)
+                    {
+                        <div class="application-room-summary">
+                            <div><span>Room type</span><strong>@RoomTypeLabel(SelectedPlan.RoomType)</strong></div>
+                            <div><span>Monthly price</span><strong>₹@SelectedPlan.MonthlyRent.ToString("N0")</strong></div>
+                            <div><span>Available beds</span><strong>@SelectedPlan.AvailableBeds</strong></div>
+                        </div>
+                    }
+                    <div class="field"><label>Emergency contact</label><InputText @bind-Value="form.EmergencyContact" /></div>
+                    <div class="field"><label>Notes</label><InputTextArea @bind-Value="form.Notes" placeholder="Move-in date or other requirements" /></div>
+                    <div class="honeypot" aria-hidden="true"><label>Website</label><InputText @bind-Value="form.Website" tabindex="-1" autocomplete="off" /></div>
+                    <button class="button primary" type="submit" disabled="@(submitting || !AvailablePlans.Any())">@(submitting ? "Submitting..." : "Submit application")</button>
+                </div>
+            </div>
+        </EditForm>
+    }
+</section>
+
+@code {
+    private TenantApplicationForm form = new();
+    private HostelSetting? settings;
+    private List<Room> rooms = [];
+    private string? successNumber;
+    private string? error;
+    private bool submitting;
+
+    private IEnumerable<RoomPlan> AvailablePlans => rooms
+        .Where(room => room.Status == "active" && room.Beds.Any(bed => bed.Status == "available"))
+        .GroupBy(room => room.RoomType)
+        .Select(group => new RoomPlan(group.Key, group.Min(room => room.MonthlyRent), group.Sum(room => room.Beds.Count(bed => bed.Status == "available"))))
+        .OrderBy(plan => plan.MonthlyRent);
+    private RoomPlan? SelectedPlan => AvailablePlans.FirstOrDefault(plan => plan.RoomType == form.PreferredRoomType);
+
+    protected override async Task OnInitializedAsync()
+    {
+        var settingsTask = SettingsReader.GetSettingsAsync();
+        var roomsTask = Repository.GetPublicRoomsAsync();
+        await Task.WhenAll(settingsTask, roomsTask);
+        settings = await settingsTask;
+        rooms = await roomsTask;
+    }
+
+    private async Task SubmitAsync()
+    {
+        error = null;
+        submitting = true;
+        try
+        {
+            var application = await Repository.SubmitTenantApplicationAsync(form);
+            successNumber = application.ApplicationNumber;
+            form = new TenantApplicationForm();
+        }
+        catch (InvalidOperationException exception)
+        {
+            error = exception.Message;
+        }
+        finally
+        {
+            submitting = false;
+        }
+    }
+
+    private string PropertyLabel => settings is null ? "Property" : settings.PropertyModel == "co_living"
+        ? $"{ResidentLabel(settings.ResidentCategory)} co-living"
+        : $"{ResidentLabel(settings.ResidentCategory)} PG";
+
+    private static string ResidentLabel(string value) => value switch { "men" => "Men's", "women" => "Women's", _ => "Mixed" };
+    private static string RoomTypeLabel(string value) => value switch { "single" => "Single", "double" => "Double sharing", "triple" => "Triple sharing", "dormitory" => "Dormitory", _ => value };
+    private sealed record RoomPlan(string RoomType, decimal MonthlyRent, int AvailableBeds);
+}

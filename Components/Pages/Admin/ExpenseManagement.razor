@@ -1,0 +1,204 @@
+@page "/admin/Expenses"
+@layout AdminLayout
+@attribute [Authorize(Roles = AppRoles.Admin)]
+@inject IHostelRepository Repository
+@inject AuthenticationStateProvider AuthStateProvider
+
+<DynamicPageTitle Prefix="Expenses" />
+
+<div class="admin-page-title with-action">
+    <div>
+        <h1>Expense Tracker</h1>
+        <p>Track operating costs and compare net profit against revenue</p>
+    </div>
+    <button class="button primary compact" @onclick="StartCreate"><span aria-hidden="true">＋</span> Add Expense</button>
+</div>
+
+<div class="admin-metric-grid">
+    <article class="admin-metric-card wide">
+        <div>
+            <span>This Month Expenses</span>
+            <strong>₹@MonthlyExpenses.ToString("N0")</strong>
+        </div>
+        <span class="metric-icon red wallet-icon" aria-hidden="true"></span>
+    </article>
+    <article class="admin-metric-card wide">
+        <div>
+            <span>Total Logged</span>
+            <strong>₹@expenses.Sum(expense => expense.Amount).ToString("N0")</strong>
+        </div>
+        <span class="metric-icon orange bill-icon" aria-hidden="true"></span>
+    </article>
+</div>
+
+@if (showForm)
+{
+    <EditForm Model="form" OnValidSubmit="SaveAsync" FormName="expense-management">
+        <DataAnnotationsValidator />
+        <div class="admin-panel form-grid admin-form-panel">
+            <div class="form-grid two">
+                <div class="field">
+                    <label>Category</label>
+                    <InputSelect @bind-Value="form.Category">
+                        <option value="electricity">Electricity</option>
+                        <option value="water">Water</option>
+                        <option value="maintenance">Maintenance</option>
+                        <option value="internet">Internet</option>
+                        <option value="staff_salary">Staff Salary</option>
+                        <option value="food">Food / Mess</option>
+                        <option value="other">Other</option>
+                    </InputSelect>
+                </div>
+                <div class="field">
+                    <label>Date</label>
+                    <InputDate @bind-Value="form.ExpenseDate" />
+                </div>
+            </div>
+            <div class="form-grid two">
+                <div class="field">
+                    <label>Title</label>
+                    <InputText @bind-Value="form.Title" />
+                    <ValidationMessage For="() => form.Title" />
+                </div>
+                <div class="field">
+                    <label>Amount</label>
+                    <InputNumber @bind-Value="form.Amount" />
+                    <ValidationMessage For="() => form.Amount" />
+                </div>
+            </div>
+            <div class="field">
+                <label>Notes</label>
+                <InputTextArea @bind-Value="form.Notes" />
+            </div>
+            <div class="actions">
+                <button class="button primary" type="submit">Save expense</button>
+                <button class="button outline" type="button" @onclick="Cancel">Cancel</button>
+            </div>
+        </div>
+    </EditForm>
+}
+
+<div class="admin-filter-row">
+    <input class="search-input grow" placeholder="Search expenses..." @bind="search" @bind:event="oninput" />
+    <select class="search-input" @bind="categoryFilter">
+        <option value="all">All Categories</option>
+        <option value="electricity">Electricity</option>
+        <option value="water">Water</option>
+        <option value="maintenance">Maintenance</option>
+        <option value="internet">Internet</option>
+        <option value="staff_salary">Staff Salary</option>
+        <option value="food">Food / Mess</option>
+        <option value="other">Other</option>
+    </select>
+</div>
+
+@if (!FilteredExpenses.Any())
+{
+    <div class="admin-empty">
+        <span class="empty-icon wallet-icon" aria-hidden="true"></span>
+        <p>No expenses logged yet.</p>
+    </div>
+}
+else
+{
+    <div class="admin-panel table-card">
+        <div class="table-wrap">
+            <table class="admin-table">
+                <thead>
+                    <tr><th>Date</th><th>Category</th><th>Title</th><th>Amount</th><th>Notes</th><th>Actions</th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var expense in FilteredExpenses)
+                    {
+                        <tr>
+                            <td>@expense.ExpenseDate.ToString("dd MMM yyyy")</td>
+                            <td><span class="badge neutral">@Label(expense.Category)</span></td>
+                            <td><strong>@expense.Title</strong></td>
+                            <td>₹@expense.Amount.ToString("N0")</td>
+                            <td>@expense.Notes</td>
+                            <td>
+                                <div class="actions">
+                                    <button class="button outline compact" @onclick="() => StartEdit(expense)">Edit</button>
+                                    <button class="button danger compact" @onclick="() => DeleteAsync(expense.Id)">Delete</button>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+}
+
+@code {
+    private List<Expense> expenses = [];
+    private ExpenseForm form = new();
+    private bool showForm;
+    private string search = string.Empty;
+    private string categoryFilter = "all";
+
+    private decimal MonthlyExpenses => expenses
+        .Where(expense => expense.ExpenseDate.Month == DateTime.Today.Month && expense.ExpenseDate.Year == DateTime.Today.Year)
+        .Sum(expense => expense.Amount);
+
+    private IEnumerable<Expense> FilteredExpenses => expenses.Where(expense =>
+    {
+        var matchesCategory = categoryFilter == "all" || expense.Category == categoryFilter;
+        var matchesSearch = string.IsNullOrWhiteSpace(search)
+            || expense.Title.Contains(search, StringComparison.OrdinalIgnoreCase)
+            || expense.Notes.Contains(search, StringComparison.OrdinalIgnoreCase);
+        return matchesCategory && matchesSearch;
+    });
+
+    protected override async Task OnInitializedAsync() => await ReloadAsync();
+
+    private async Task ReloadAsync() => expenses = await Repository.GetExpensesAsync();
+
+    private void StartCreate()
+    {
+        form = new ExpenseForm();
+        showForm = true;
+    }
+
+    private void StartEdit(Expense expense)
+    {
+        form = new ExpenseForm
+        {
+            Id = expense.Id,
+            Category = expense.Category,
+            Title = expense.Title,
+            Amount = expense.Amount,
+            ExpenseDate = expense.ExpenseDate,
+            Notes = expense.Notes
+        };
+        showForm = true;
+    }
+
+    private async Task SaveAsync()
+    {
+        await Repository.SaveExpenseAsync(form, await ActorAsync());
+        form = new ExpenseForm();
+        showForm = false;
+        await ReloadAsync();
+    }
+
+    private void Cancel()
+    {
+        form = new ExpenseForm();
+        showForm = false;
+    }
+
+    private async Task DeleteAsync(Guid id)
+    {
+        await Repository.DeleteExpenseAsync(id, await ActorAsync());
+        await ReloadAsync();
+    }
+
+    private static string Label(string value) => value.Replace("_", " ");
+
+    private async Task<string> ActorAsync()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        return state.User.Identity?.Name ?? "admin";
+    }
+}

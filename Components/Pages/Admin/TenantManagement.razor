@@ -1,0 +1,399 @@
+@page "/admin/TenantManagement"
+@layout AdminLayout
+@attribute [Authorize(Roles = AppRoles.Admin)]
+@inject IHostelRepository Repository
+@inject AuthenticationStateProvider AuthStateProvider
+
+<DynamicPageTitle Prefix="Tenant Management" />
+
+<div class="admin-page-title with-action">
+    <div>
+        <h1>Tenant Management</h1>
+        <p>Manage all tenants and room allocations</p>
+    </div>
+    <button class="button primary compact" @onclick="StartCreate"><span aria-hidden="true">＋</span> Add Tenant</button>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(error))
+{
+    <div class="alert danger">@error</div>
+}
+@if (!string.IsNullOrWhiteSpace(message))
+{
+    <div class="alert success">@message</div>
+}
+
+@if (showForm)
+{
+    <EditForm Model="form" OnValidSubmit="SaveAsync" FormName="tenant-management">
+        <DataAnnotationsValidator />
+        <div class="admin-panel form-grid admin-form-panel">
+            <div class="form-grid two">
+                <div class="field">
+                    <label>Full name</label>
+                    <InputText @bind-Value="form.FullName" />
+                    <ValidationMessage For="() => form.FullName" />
+                </div>
+                <div class="field">
+                    <label>Email</label>
+                    <InputText type="email" @bind-Value="form.Email" />
+                    <ValidationMessage For="() => form.Email" />
+                </div>
+            </div>
+            <div class="form-grid two">
+                <div class="field">
+                    <label>Phone</label>
+                    <InputText @bind-Value="form.Phone" />
+                    <ValidationMessage For="() => form.Phone" />
+                </div>
+                <div class="field">
+                    <label>Monthly rent</label>
+                    <InputNumber @bind-Value="form.MonthlyRent" />
+                </div>
+            </div>
+            <div class="form-grid two">
+                <div class="field">
+                    <label>Gender</label>
+                    <InputSelect @bind-Value="form.Gender">
+                        <option value="not_specified">Not specified</option>
+                        <option value="male">Male</option>
+                        <option value="female">Female</option>
+                        <option value="other">Other</option>
+                    </InputSelect>
+                </div>
+                <div class="field">
+                    <label>Security deposit</label>
+                    <InputNumber @bind-Value="form.SecurityDepositAmount" />
+                    <ValidationMessage For="() => form.SecurityDepositAmount" />
+                </div>
+            </div>
+            <div class="form-grid two">
+                <div class="field">
+                    <label>Room</label>
+                    <InputSelect @bind-Value="form.RoomId">
+                        <option value="@Guid.Empty">Select room</option>
+                        @foreach (var room in rooms)
+                        {
+                            <option value="@room.Id">Room @room.RoomNumber</option>
+                        }
+                    </InputSelect>
+                </div>
+                <div class="field">
+                    <label>Bed</label>
+                    <InputSelect @bind-Value="form.BedId">
+                        <option value="">No bed selected</option>
+                        @foreach (var bed in beds.Where(bed => bed.Status == "available" || bed.Id == form.BedId))
+                        {
+                            <option value="@bed.Id">Room @bed.Room?.RoomNumber · Bed @bed.BedNumber</option>
+                        }
+                    </InputSelect>
+                </div>
+            </div>
+            <div class="form-grid two">
+                <div class="field">
+                    <label>Joining date</label>
+                    <InputDate @bind-Value="form.JoiningDate" />
+                </div>
+                <div class="field">
+                    <label>Emergency contact</label>
+                    <InputText @bind-Value="form.EmergencyContact" />
+                </div>
+                <div class="field">
+                    <label>Notice period (days)</label>
+                    <InputNumber @bind-Value="form.NoticePeriodDays" />
+                    <ValidationMessage For="() => form.NoticePeriodDays" />
+                </div>
+            </div>
+            <div class="form-grid two">
+                <div class="field">
+                    <label>KYC status</label>
+                    <InputSelect @bind-Value="form.KycStatus">
+                        <option value="pending">Pending</option>
+                        <option value="in_review">In Review</option>
+                        <option value="approved">Approved</option>
+                        <option value="rejected">Rejected</option>
+                    </InputSelect>
+                </div>
+                <div class="field">
+                    <label>Status</label>
+                    <InputSelect @bind-Value="form.Status">
+                        <option value="active">Active</option>
+                        <option value="notice_period">Notice Period</option>
+                        <option value="vacated">Vacated</option>
+                    </InputSelect>
+                </div>
+            </div>
+            <div class="actions">
+                <button class="button primary" type="submit">Save tenant</button>
+                <button class="button outline" type="button" @onclick="Cancel">Cancel</button>
+            </div>
+        </div>
+    </EditForm>
+}
+
+@if (noticeForm.TenantId != Guid.Empty)
+{
+    <EditForm Model="noticeForm" OnValidSubmit="SaveNoticeAsync" FormName="tenant-notice">
+        <DataAnnotationsValidator />
+        <div class="admin-panel compact-action-panel">
+            <div><h2>Record vacate notice</h2><p>@SelectedTenantName(noticeForm.TenantId) must complete the configured notice period.</p></div>
+            <div class="field"><label>Planned vacate date</label><InputDate @bind-Value="noticeForm.PlannedVacateDate" /></div>
+            <div class="actions"><button class="button primary compact" type="submit">Start notice period</button><button class="button outline compact" type="button" @onclick="CancelTenantAction">Cancel</button></div>
+        </div>
+    </EditForm>
+}
+
+@if (vacateForm.TenantId != Guid.Empty)
+{
+    <EditForm Model="vacateForm" OnValidSubmit="CompleteVacateAsync" FormName="tenant-vacate">
+        <DataAnnotationsValidator />
+        <div class="admin-panel compact-action-panel">
+            <div><h2>Complete vacate and refund</h2><p>Deposit paid: ₹@VacatingTenant?.SecurityDepositPaidAmount.ToString("N0"). Refund after deductions: <strong>₹@CalculatedRefund.ToString("N0")</strong>.</p></div>
+            <div class="field"><label>Deductions</label><InputNumber @bind-Value="vacateForm.Deductions" /><ValidationMessage For="() => vacateForm.Deductions" /></div>
+            <div class="field grow"><label>Refund notes</label><InputText @bind-Value="vacateForm.Notes" placeholder="Damage, pending dues, or refund reference" /></div>
+            <div class="actions"><button class="button danger compact" type="submit">Confirm vacate</button><button class="button outline compact" type="button" @onclick="CancelTenantAction">Cancel</button></div>
+        </div>
+    </EditForm>
+}
+
+<div class="admin-filter-row">
+    <input class="search-input grow" placeholder="Search by name or phone..." @bind="search" @bind:event="oninput" />
+    <select class="search-input" @bind="statusFilter">
+        <option value="all">All Status</option>
+        <option value="active">Active</option>
+        <option value="vacated">Vacated</option>
+        <option value="notice_period">Notice Period</option>
+    </select>
+</div>
+
+@if (!FilteredTenants.Any())
+{
+    <div class="admin-empty">
+        <span class="empty-icon users-icon" aria-hidden="true"></span>
+        <p>No tenants found.</p>
+    </div>
+}
+else
+{
+    <div class="admin-panel table-card">
+        <div class="table-wrap">
+            <table class="admin-table">
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Phone</th>
+                            <th>Gender</th>
+                            <th>Room</th>
+                            <th>Rent</th>
+                            <th>Deposit</th>
+                            <th>KYC</th>
+                            <th>Joined</th>
+                            <th>Status</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var tenant in FilteredTenants)
+                    {
+                        <tr>
+                            <td><strong>@tenant.FullName</strong></td>
+                            <td>@tenant.Phone</td>
+                            <td>@StatusLabel(tenant.Gender)</td>
+                            <td>Room @tenant.Room?.RoomNumber</td>
+                            <td>₹@tenant.MonthlyRent.ToString("N0")</td>
+                            <td><strong>₹@tenant.SecurityDepositAmount.ToString("N0")</strong><small class="table-subtext"><span class="badge @DepositBadge(tenant.SecurityDepositStatus)">@StatusLabel(tenant.SecurityDepositStatus)</span></small></td>
+                            <td><span class="badge @KycBadge(tenant.KycStatus)">@StatusLabel(tenant.KycStatus)</span></td>
+                            <td>@tenant.JoiningDate.ToString("dd MMM yyyy")</td>
+                            <td><span class="badge @StatusBadge(tenant.Status)">@tenant.Status</span></td>
+                            <td>
+                                <div class="actions">
+                                    <button class="button outline compact" @onclick="() => StartEdit(tenant)">Edit</button>
+                                    @if (tenant.Status == "active")
+                                    {
+                                        <button class="button outline compact" @onclick="() => StartNotice(tenant)">Give notice</button>
+                                    }
+                                    else if (tenant.Status == "notice_period")
+                                    {
+                                        <button class="button danger compact" @onclick="() => StartVacate(tenant)">Complete vacate</button>
+                                    }
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+}
+
+@code {
+    private List<Tenant> tenants = [];
+    private List<Room> rooms = [];
+    private List<Bed> beds = [];
+    private TenantForm form = new();
+    private bool showForm;
+    private string search = string.Empty;
+    private string statusFilter = "all";
+    private string? error;
+    private string? message;
+    private TenantNoticeForm noticeForm = new();
+    private TenantVacateForm vacateForm = new();
+    private Tenant? VacatingTenant => tenants.FirstOrDefault(tenant => tenant.Id == vacateForm.TenantId);
+    private decimal CalculatedRefund => Math.Max((VacatingTenant?.SecurityDepositPaidAmount ?? 0) - vacateForm.Deductions, 0);
+
+    private IEnumerable<Tenant> FilteredTenants => tenants.Where(tenant =>
+    {
+        var matchesSearch = string.IsNullOrWhiteSpace(search)
+            || tenant.FullName.Contains(search, StringComparison.OrdinalIgnoreCase)
+            || tenant.Phone.Contains(search, StringComparison.OrdinalIgnoreCase);
+        var matchesStatus = statusFilter == "all" || tenant.Status == statusFilter;
+        return matchesSearch && matchesStatus;
+    });
+
+    protected override async Task OnInitializedAsync()
+    {
+        await ReloadAsync();
+    }
+
+    private async Task ReloadAsync()
+    {
+        tenants = await Repository.GetTenantsAsync();
+        rooms = await Repository.GetRoomsAsync();
+        beds = await Repository.GetBedsAsync();
+    }
+
+    private void StartCreate()
+    {
+        form = new TenantForm();
+        showForm = true;
+    }
+
+    private void StartEdit(Tenant tenant)
+    {
+        form = new TenantForm
+        {
+            Id = tenant.Id,
+            FullName = tenant.FullName,
+            Email = tenant.Email,
+            Phone = tenant.Phone,
+            Gender = tenant.Gender,
+            RoomId = tenant.RoomId,
+            BedId = tenant.BedId,
+            MonthlyRent = tenant.MonthlyRent,
+            SecurityDepositAmount = tenant.SecurityDepositAmount,
+            NoticePeriodDays = tenant.NoticePeriodDays,
+            JoiningDate = tenant.JoiningDate,
+            EmergencyContact = tenant.EmergencyContact,
+            KycStatus = tenant.KycStatus,
+            Status = tenant.Status
+        };
+        showForm = true;
+    }
+
+    private void Cancel() => showForm = false;
+
+    private async Task SaveAsync()
+    {
+        if (form.RoomId == Guid.Empty)
+        {
+            return;
+        }
+
+        error = null;
+        try
+        {
+            await Repository.SaveTenantAsync(form, await ActorAsync());
+            showForm = false;
+            await ReloadAsync();
+        }
+        catch (InvalidOperationException exception)
+        {
+            error = exception.Message;
+        }
+    }
+
+    private void StartNotice(Tenant tenant)
+    {
+        error = null;
+        message = null;
+        vacateForm = new TenantVacateForm();
+        noticeForm = new TenantNoticeForm
+        {
+            TenantId = tenant.Id,
+            PlannedVacateDate = DateOnly.FromDateTime(DateTime.Today.AddDays(tenant.NoticePeriodDays))
+        };
+    }
+
+    private void StartVacate(Tenant tenant)
+    {
+        error = null;
+        message = null;
+        noticeForm = new TenantNoticeForm();
+        vacateForm = new TenantVacateForm { TenantId = tenant.Id };
+    }
+
+    private void CancelTenantAction()
+    {
+        noticeForm = new TenantNoticeForm();
+        vacateForm = new TenantVacateForm();
+    }
+
+    private async Task SaveNoticeAsync()
+    {
+        error = null;
+        try
+        {
+            await Repository.StartTenantNoticeAsync(noticeForm, await ActorAsync());
+            message = "Vacate notice recorded.";
+            CancelTenantAction();
+            await ReloadAsync();
+        }
+        catch (InvalidOperationException exception) { error = exception.Message; }
+    }
+
+    private async Task CompleteVacateAsync()
+    {
+        error = null;
+        try
+        {
+            var refund = await Repository.VacateTenantAsync(vacateForm, await ActorAsync());
+            message = $"Tenant vacated. Record a deposit refund of ₹{refund:N0}.";
+            CancelTenantAction();
+            await ReloadAsync();
+        }
+        catch (InvalidOperationException exception) { error = exception.Message; }
+    }
+
+    private static string StatusBadge(string status) => status switch
+    {
+        "active" => "success",
+        "notice_period" => "warning",
+        "vacated" => "neutral",
+        _ => "neutral"
+    };
+
+    private static string KycBadge(string status) => status switch
+    {
+        "approved" => "success",
+        "in_review" => "warning",
+        "rejected" => "danger",
+        _ => "neutral"
+    };
+
+    private static string DepositBadge(string status) => status switch
+    {
+        "paid" or "refunded" => "success",
+        "partially_paid" or "partially_refunded" => "warning",
+        "forfeited" => "danger",
+        _ => "neutral"
+    };
+
+    private static string StatusLabel(string status) => status.Replace("_", " ");
+    private string SelectedTenantName(Guid tenantId) => tenants.FirstOrDefault(tenant => tenant.Id == tenantId)?.FullName ?? "Tenant";
+
+    private async Task<string> ActorAsync()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        return state.User.Identity?.Name ?? "admin";
+    }
+}

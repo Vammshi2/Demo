@@ -1,0 +1,238 @@
+@page "/admin/Kyc"
+@layout AdminLayout
+@attribute [Authorize(Roles = AppRoles.Admin)]
+@inject IHostelRepository Repository
+@inject AuthenticationStateProvider AuthStateProvider
+@inject IKycFileStorage KycFileStorage
+
+<DynamicPageTitle Prefix="KYC Documents" />
+
+<div class="admin-page-title with-action">
+    <div>
+        <h1>KYC & Documents</h1>
+        <p>Upload, review, and track tenant onboarding documents</p>
+    </div>
+    <button class="button primary compact" @onclick="StartCreate"><span aria-hidden="true">＋</span> Add Document</button>
+</div>
+
+@if (showForm)
+{
+    <EditForm Model="form" OnValidSubmit="SaveAsync" FormName="kyc-management">
+        <DataAnnotationsValidator />
+        <div class="admin-panel form-grid admin-form-panel">
+            <div class="form-grid two">
+                <div class="field">
+                    <label>Tenant</label>
+                    <InputSelect @bind-Value="form.TenantId">
+                        <option value="@Guid.Empty">Select tenant</option>
+                        @foreach (var tenant in tenants)
+                        {
+                            <option value="@tenant.Id">@tenant.FullName · Room @tenant.Room?.RoomNumber</option>
+                        }
+                    </InputSelect>
+                </div>
+                <div class="field">
+                    <label>Document type</label>
+                    <InputSelect @bind-Value="form.DocumentType">
+                        <option value="Aadhaar">Aadhaar</option>
+                        <option value="Passport">Passport</option>
+                        <option value="PAN">PAN</option>
+                        <option value="Rental Agreement">Rental Agreement</option>
+                        <option value="Digital Signature">Digital Signature</option>
+                        <option value="Other">Other</option>
+                    </InputSelect>
+                </div>
+            </div>
+            <div class="form-grid two">
+                <div class="field">
+                    <label>Status</label>
+                    <InputSelect @bind-Value="form.Status">
+                        <option value="pending">Pending</option>
+                        <option value="approved">Approved</option>
+                        <option value="rejected">Rejected</option>
+                    </InputSelect>
+                </div>
+                <div class="field">
+                    <label>Upload file</label>
+                    <InputFile OnChange="HandleFileUpload" />
+                </div>
+            </div>
+            @if (!string.IsNullOrWhiteSpace(form.FileUrl))
+            {
+                <div class="alert success compact-alert">Document selected for secure storage.</div>
+            }
+            @if (!string.IsNullOrWhiteSpace(uploadError))
+            {
+                <div class="alert danger compact-alert">@uploadError</div>
+            }
+            <div class="field">
+                <label>Notes</label>
+                <InputTextArea @bind-Value="form.Notes" />
+            </div>
+            <div class="actions">
+                <button class="button primary" type="submit">Save document</button>
+                <button class="button outline" type="button" @onclick="Cancel">Cancel</button>
+            </div>
+        </div>
+    </EditForm>
+}
+
+<div class="admin-filter-row">
+    <input class="search-input grow" placeholder="Search tenant or document..." @bind="search" @bind:event="oninput" />
+    <select class="search-input" @bind="statusFilter">
+        <option value="all">All Status</option>
+        <option value="pending">Pending</option>
+        <option value="approved">Approved</option>
+        <option value="rejected">Rejected</option>
+    </select>
+</div>
+
+@if (!FilteredDocuments.Any())
+{
+    <div class="admin-empty">
+        <span class="empty-icon file-icon" aria-hidden="true"></span>
+        <p>No KYC documents uploaded yet.</p>
+    </div>
+}
+else
+{
+    <div class="admin-panel table-card">
+        <div class="table-wrap">
+            <table class="admin-table">
+                <thead>
+                    <tr><th>Tenant</th><th>Room</th><th>Document</th><th>Status</th><th>Uploaded</th><th>File</th><th>Actions</th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var document in FilteredDocuments)
+                    {
+                        <tr>
+                            <td><strong>@document.Tenant?.FullName</strong></td>
+                            <td>Room @document.Tenant?.Room?.RoomNumber</td>
+                            <td>@document.DocumentType</td>
+                            <td><span class="badge @StatusBadge(document.Status)">@Label(document.Status)</span></td>
+                            <td>@document.UploadedUtc.ToString("dd MMM yyyy")</td>
+                            <td>
+                                @if (!string.IsNullOrWhiteSpace(document.FileUrl))
+                                {
+                                    <a class="button outline compact" href="@DocumentUrl(document.Id)" target="_blank">Open</a>
+                                }
+                            </td>
+                            <td>
+                                <div class="actions">
+                                    <button class="button outline compact" @onclick="() => StartEdit(document)">Edit</button>
+                                    <button class="button primary compact" @onclick='() => ReviewAsync(document.Id, "approved")'>Approve</button>
+                                    <button class="button danger compact" @onclick='() => ReviewAsync(document.Id, "rejected")'>Reject</button>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+}
+
+@code {
+    private List<TenantDocument> documents = [];
+    private List<Tenant> tenants = [];
+    private TenantDocumentForm form = new();
+    private bool showForm;
+    private string search = string.Empty;
+    private string statusFilter = "all";
+    private string? uploadError;
+
+    private IEnumerable<TenantDocument> FilteredDocuments => documents.Where(document =>
+    {
+        var tenantName = document.Tenant?.FullName ?? string.Empty;
+        var matchesSearch = string.IsNullOrWhiteSpace(search)
+            || tenantName.Contains(search, StringComparison.OrdinalIgnoreCase)
+            || document.DocumentType.Contains(search, StringComparison.OrdinalIgnoreCase);
+        var matchesStatus = statusFilter == "all" || document.Status == statusFilter;
+        return matchesSearch && matchesStatus;
+    });
+
+    protected override async Task OnInitializedAsync() => await ReloadAsync();
+
+    private async Task ReloadAsync()
+    {
+        tenants = await Repository.GetTenantsAsync();
+        documents = await Repository.GetTenantDocumentsAsync();
+    }
+
+    private void StartCreate()
+    {
+        form = new TenantDocumentForm();
+        showForm = true;
+    }
+
+    private void StartEdit(TenantDocument document)
+    {
+        form = new TenantDocumentForm
+        {
+            Id = document.Id,
+            TenantId = document.TenantId,
+            DocumentType = document.DocumentType,
+            FileUrl = document.FileUrl,
+            Status = document.Status,
+            Notes = document.Notes
+        };
+        showForm = true;
+    }
+
+    private async Task HandleFileUpload(InputFileChangeEventArgs e)
+    {
+        uploadError = null;
+        try
+        {
+            form.FileUrl = await KycFileStorage.SaveAsync(e.File);
+        }
+        catch (InvalidDataException exception)
+        {
+            form.FileUrl = string.Empty;
+            uploadError = exception.Message;
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        if (form.TenantId == Guid.Empty)
+        {
+            return;
+        }
+
+        await Repository.SaveTenantDocumentAsync(form, await ActorAsync());
+        form = new TenantDocumentForm();
+        showForm = false;
+        await ReloadAsync();
+    }
+
+    private void Cancel()
+    {
+        form = new TenantDocumentForm();
+        showForm = false;
+    }
+
+    private async Task ReviewAsync(Guid id, string status)
+    {
+        await Repository.UpdateTenantDocumentStatusAsync(id, status, await ActorAsync());
+        await ReloadAsync();
+    }
+
+    private static string StatusBadge(string status) => status switch
+    {
+        "approved" => "success",
+        "rejected" => "danger",
+        "pending" => "warning",
+        _ => "neutral"
+    };
+
+    private static string Label(string value) => value.Replace("_", " ");
+
+    private static string DocumentUrl(Guid id) => $"/admin/documents/{id}";
+
+    private async Task<string> ActorAsync()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        return state.User.Identity?.Name ?? "admin";
+    }
+}

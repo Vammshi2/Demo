@@ -1,0 +1,52 @@
+<PageTitle>Subscription required</PageTitle>
+
+<main class="license-page">
+    <section class="license-panel">
+        <div class="license-mark" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><path d="M12 3 4 7v5c0 4.7 3.2 8 8 9 4.8-1 8-4.3 8-9V7l-8-4Z" /><path d="M9 12h6M12 9v6" /></svg>
+        </div>
+        <p class="eyebrow orange">INSTALLATION PAUSED</p>
+        <h1>Subscription verification required</h1>
+        <p>@Status.Message</p>
+        @if (!string.IsNullOrWhiteSpace(Status.CustomerName))
+        {
+            <div class="license-detail"><span>Licensed to</span><strong>@Status.CustomerName</strong></div>
+        }
+        @if (Status.PaidThroughUtc.HasValue)
+        {
+            <div class="license-detail"><span>Paid through</span><strong>@Status.PaidThroughUtc.Value.ToLocalTime().ToString("dd MMM yyyy")</strong></div>
+        }
+        <p class="license-help">No hostel, tenant, KYC, billing, or payment data is sent to the licensing service.</p>
+        <button class="button primary" type="button" @onclick="RetryAsync" disabled="@checking">
+            @(checking ? "Checking..." : "Check subscription again")
+        </button>
+    </section>
+</main>
+
+@code {
+    [Parameter, EditorRequired]
+    public LicenseSnapshot Status { get; set; } = default!;
+
+    [Inject]
+    private ILicenseService LicenseService { get; set; } = default!;
+
+    [Inject]
+    private NavigationManager Navigation { get; set; } = default!;
+
+    private bool checking;
+
+    private async Task RetryAsync()
+    {
+        checking = true;
+        var result = await LicenseService.GetStatusAsync(forceRefresh: true);
+        checking = false;
+        if (result.AllowsAccess)
+        {
+            Navigation.NavigateTo("/", forceLoad: true);
+        }
+        else
+        {
+            Status = result;
+        }
+    }
+}

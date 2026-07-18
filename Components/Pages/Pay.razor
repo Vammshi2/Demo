@@ -1,0 +1,116 @@
+@page "/pay/{Token}"
+@inject IHostelRepository Repository
+@inject IHostelSettingsReader SettingsReader
+@inject IPaymentQrService QrService
+
+<PageTitle>Secure Payment | @(settings?.HostelName ?? "Hostel")</PageTitle>
+
+<section class="section payment-page">
+    @if (loading)
+    {
+        <div class="payment-shell"><p class="muted">Loading payment details...</p></div>
+    }
+    else if (link is null || link.Status != "active")
+    {
+        <div class="payment-shell payment-state">
+            <span class="payment-state-icon" aria-hidden="true">!</span>
+            <h1>Payment link unavailable</h1>
+            <p>This link is invalid, expired, paid, or has been revoked. Ask the property team for a new link.</p>
+        </div>
+    }
+    else if (submitted)
+    {
+        <div class="payment-shell payment-state">
+            <span class="status-check" aria-hidden="true">✓</span>
+            <h1>Payment submitted</h1>
+            <p>Your transaction reference is awaiting verification. The bill will update after the property team or payment provider confirms it.</p>
+        </div>
+    }
+    else
+    {
+        <div class="payment-shell">
+            <div class="payment-summary">
+                <PropertyBrandMark PropertyModel="@(settings?.PropertyModel ?? "pg")" ResidentCategory="@(settings?.ResidentCategory ?? "mixed")" />
+                <p class="eyebrow">SECURE PAYMENT</p>
+                <h1>₹@link.Amount.ToString("N2")</h1>
+                <p>Invoice @link.Bill?.InvoiceNumber · @link.Bill?.BillMonth @link.Bill?.BillYear</p>
+                <dl class="payment-details">
+                    <div><dt>Resident</dt><dd>@link.Tenant?.FullName</dd></div>
+                    <div><dt>Phone</dt><dd>@MaskedPhone</dd></div>
+                    <div><dt>Room</dt><dd>@RoomLabel</dd></div>
+                    <div><dt>Bed</dt><dd>@BedLabel</dd></div>
+                    <div><dt>Valid until</dt><dd>@link.ExpiresUtc.ToLocalTime().ToString("dd MMM yyyy, h:mm tt")</dd></div>
+                </dl>
+            </div>
+            <div class="payment-action-panel">
+                @if (settings?.PaymentTestMode == true)
+                {
+                    <div class="alert warning">Payments are in test mode. UPI transfer is disabled until the administrator enables live payments.</div>
+                }
+                else if (string.IsNullOrWhiteSpace(settings?.UpiId))
+                {
+                    <div class="alert warning">Online UPI is not configured. Contact the property team for payment instructions.</div>
+                }
+                else
+                {
+                    <h2>Pay with UPI</h2>
+                    <p class="muted">Scan the QR code or open your UPI app. The amount and invoice reference are prefilled.</p>
+                    <img class="payment-qr" src="@QrUri" alt="UPI QR code for this invoice" />
+                    <a class="button primary full-width" href="@UpiIntent">Open UPI app</a>
+                    <div class="payment-divider"><span>after payment</span></div>
+                    @if (!string.IsNullOrWhiteSpace(error)) { <div class="alert danger">@error</div> }
+                    <EditForm Model="form" OnValidSubmit="SubmitAsync" FormName="public-payment-confirmation">
+                        <DataAnnotationsValidator />
+                        <div class="field"><label>UPI transaction / UTR number</label><InputText @bind-Value="form.TransactionId" placeholder="Enter the reference from your UPI app" /><ValidationMessage For="() => form.TransactionId" /></div>
+                        <button class="button outline full-width" type="submit">Submit payment reference</button>
+                    </EditForm>
+                    <p class="payment-security-note">The link is tied to this invoice and expires automatically. Never share OTPs or UPI PINs.</p>
+                }
+            </div>
+        </div>
+    }
+</section>
+
+@code {
+    [Parameter] public string Token { get; set; } = string.Empty;
+    private PaymentLink? link;
+    private HostelSetting? settings;
+    private PublicPaymentAttemptForm form = new();
+    private bool loading = true;
+    private bool submitted;
+    private string? error;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        loading = true;
+        settings = await SettingsReader.GetSettingsAsync();
+        link = await Repository.GetPaymentLinkByTokenAsync(Token);
+        submitted = link?.Attempts.Any(item => item.Status == "pending") == true;
+        loading = false;
+    }
+
+    private async Task SubmitAsync()
+    {
+        error = null;
+        try
+        {
+            await Repository.SubmitPaymentAttemptAsync(Token, form);
+            submitted = true;
+        }
+        catch (InvalidOperationException exception) { error = exception.Message; }
+    }
+
+    private string MaskedPhone
+    {
+        get
+        {
+            var value = link?.Tenant?.Phone ?? string.Empty;
+            return value.Length <= 4 ? value : new string('•', Math.Min(value.Length - 4, 6)) + value[^4..];
+        }
+    }
+
+    private string RoomLabel => string.IsNullOrWhiteSpace(link?.Tenant?.Room?.RoomNumber) ? "Not assigned" : $"Room {link.Tenant.Room.RoomNumber}";
+    private string BedLabel => string.IsNullOrWhiteSpace(link?.Tenant?.Bed?.BedNumber) ? "Not assigned" : $"Bed {link.Tenant.Bed.BedNumber}";
+    private string QrUri => settings is null || link is null ? string.Empty : QrService.CreateUpiQrDataUri(settings.UpiId, settings.UpiPayeeName, link.Amount, link.Bill?.InvoiceNumber ?? link.Id.ToString());
+    private string UpiIntent => settings is null || link is null ? "#" : QrService.CreateUpiIntent(settings.UpiId, settings.UpiPayeeName, link.Amount, link.Bill?.InvoiceNumber ?? link.Id.ToString());
+}

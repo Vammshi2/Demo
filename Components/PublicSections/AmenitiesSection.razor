@@ -1,0 +1,44 @@
+@inject IHostelRepository Repository
+
+@if (amenities.Count > 0)
+{
+<section class="section amenities-section">
+    <div class="section-title">
+        <p class="eyebrow orange">WHY CHOOSE US</p>
+        <h2>Premium Amenities &amp; Facilities</h2>
+        <p>Experience comfortable living with top-notch amenities designed for your convenience.</p>
+    </div>
+
+    <div class="amenities-grid">
+        @foreach (var amenity in amenities)
+        {
+            <article class="amenity-card">
+                <span class="icon-badge marketing-icon @IconClass(amenity.IconKey)" aria-hidden="true"></span>
+                <h3>@amenity.Name</h3>
+                <p>@amenity.Description</p>
+            </article>
+        }
+    </div>
+</section>
+}
+
+@code {
+    private List<Amenity> amenities = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        amenities = await Repository.GetAmenitiesAsync(publishedOnly: true);
+    }
+
+    private static string IconClass(string iconKey) => iconKey switch
+    {
+        "wifi" => "wifi-icon",
+        "food" => "utensils-icon",
+        "water" => "water-icon",
+        "power" => "power-icon",
+        "parking" => "parking-icon",
+        "laundry" => "laundry-icon",
+        "housekeeping" => "housekeeping-icon",
+        _ => "shield-icon"
+    };
+}

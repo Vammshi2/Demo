@@ -1,0 +1,69 @@
+@page "/Login"
+@inject UserManager<ApplicationUser> UserManager
+
+<DynamicPageTitle Prefix="Login" />
+
+<section class="section">
+    <div class="card auth-card">
+        <p class="eyebrow">Secure access</p>
+        <h1>Login</h1>
+        <p class="muted">Admin pages are protected by ASP.NET Core Identity roles.</p>
+
+        @if (!string.IsNullOrWhiteSpace(Error))
+        {
+            <div class="alert danger">@ErrorMessage</div>
+        }
+
+        <form method="post" action="@LoginAction" class="form-grid">
+            <AntiforgeryToken />
+            <div class="field">
+                <label for="email">Email</label>
+                <input id="email" name="Email" type="email" autocomplete="username" required />
+            </div>
+            <div class="field">
+                <label for="password">Password</label>
+                <input id="password" name="Password" type="password" autocomplete="current-password" required />
+            </div>
+            <label class="muted">
+                <input type="hidden" name="RememberMe" value="false" />
+                <input type="checkbox" name="RememberMe" value="true" />
+                Remember this device
+            </label>
+            <button class="button primary" type="submit">Login</button>
+            <a class="button outline" href="/ForgotPassword">Forgot password</a>
+        </form>
+        @if (!hasAdmin)
+        {
+            <div class="first-run-link"><span>New installation?</span><a href="/Setup">Complete owner setup</a></div>
+        }
+    </div>
+</section>
+
+@code {
+    [SupplyParameterFromQuery(Name = "error")]
+    public string? Error { get; set; }
+
+    [SupplyParameterFromQuery(Name = "returnUrl")]
+    public string? ReturnUrl { get; set; }
+
+    private bool hasAdmin = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        hasAdmin = (await UserManager.GetUsersInRoleAsync(AppRoles.Admin)).Count > 0;
+    }
+
+    private string LoginAction =>
+        string.IsNullOrWhiteSpace(ReturnUrl)
+            ? "/account/login"
+            : $"/account/login?returnUrl={Uri.EscapeDataString(ReturnUrl)}";
+
+    private string ErrorMessage => Error switch
+    {
+        "token" => "Your login session expired. Refresh the page and submit the form again.",
+        "missing" => "Enter both email and password.",
+        "invalid" => "Unable to sign in with those details.",
+        "inactive" => "This account is inactive. Contact the property administrator.",
+        _ => "Unable to sign in. Please try again."
+    };
+}

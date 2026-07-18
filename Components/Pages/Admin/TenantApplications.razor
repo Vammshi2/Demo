@@ -1,0 +1,122 @@
+@page "/admin/Applications"
+@layout AdminLayout
+@attribute [Authorize(Roles = AppRoles.Admin)]
+@inject IHostelRepository Repository
+@inject AuthenticationStateProvider AuthStateProvider
+
+<DynamicPageTitle Prefix="Resident Applications" />
+
+<div class="admin-page-title with-action">
+    <div><h1>Resident Applications</h1><p>Review public applications and allocate an available room and bed</p></div>
+    <a class="button outline compact" href="/apply" target="_blank">Open public form</a>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(message)) { <div class="alert success">@message</div> }
+@if (!string.IsNullOrWhiteSpace(error)) { <div class="alert danger">@error</div> }
+
+<div class="admin-filter-row">
+    <input class="search-input grow" placeholder="Search name, phone, or reference" @bind="search" @bind:event="oninput" />
+    <select class="search-input" @bind="status"><option value="all">All statuses</option><option value="pending">Pending</option><option value="approved">Approved</option><option value="rejected">Rejected</option></select>
+</div>
+
+@if (!Filtered.Any())
+{
+    <div class="admin-empty"><span class="empty-icon users-icon" aria-hidden="true"></span><p>No applications found.</p></div>
+}
+else
+{
+    <div class="application-admin-list">
+        @foreach (var application in Filtered)
+        {
+            <article class="admin-panel application-admin-card">
+                <div class="application-card-head">
+                    <div><span class="muted">@application.ApplicationNumber</span><h2>@application.FullName</h2></div>
+                    <span class="badge @Badge(application.Status)">@application.Status</span>
+                </div>
+                <dl class="detail-grid"><div><dt>Phone</dt><dd>@application.Phone</dd></div><div><dt>Email</dt><dd>@application.Email</dd></div><div><dt>Resident category</dt><dd>@Label(application.Gender)</dd></div><div><dt>Room type</dt><dd>@Label(application.PreferredRoomType)</dd></div><div><dt>Monthly price</dt><dd>₹@application.RoomPrice.ToString("N0")</dd></div><div><dt>Available beds</dt><dd>@AvailableCount(application.PreferredRoomType)</dd></div><div><dt>Occupation</dt><dd>@Value(application.Occupation)</dd></div><div><dt>Submitted</dt><dd>@application.SubmittedUtc.ToLocalTime().ToString("dd MMM yyyy, h:mm tt")</dd></div></dl>
+                @if (!string.IsNullOrWhiteSpace(application.Notes)) { <p class="application-notes">@application.Notes</p> }
+                @if (application.Status == "pending")
+                {
+                    @if (approval.ApplicationId == application.Id)
+                    {
+                        <EditForm Model="approval" OnValidSubmit="ApproveAsync" FormName="application-approval">
+                            <DataAnnotationsValidator />
+                            <div class="approval-row">
+                                <div class="field"><label>Room</label><InputSelect @bind-Value="approval.RoomId"><option value="@Guid.Empty">Select room</option>@foreach (var room in rooms.Where(item => item.Status == "active")){<option value="@room.Id">Room @room.RoomNumber · ₹@room.MonthlyRent.ToString("N0")</option>}</InputSelect></div>
+                                <div class="field"><label>Bed</label><InputSelect @bind-Value="approval.BedId"><option value="">No bed</option>@foreach (var bed in AvailableBeds){<option value="@bed.Id">Room @bed.Room?.RoomNumber · Bed @bed.BedNumber</option>}</InputSelect></div>
+                                <div class="field"><label>Monthly rent</label><InputNumber @bind-Value="approval.MonthlyRent" /></div>
+                                <div class="field"><label>Security deposit</label><InputNumber @bind-Value="approval.SecurityDepositAmount" /><ValidationMessage For="() => approval.SecurityDepositAmount" /></div>
+                                <div class="field"><label>Notice period (days)</label><InputNumber @bind-Value="approval.NoticePeriodDays" /><ValidationMessage For="() => approval.NoticePeriodDays" /></div>
+                                <div class="field"><label>Joining date</label><InputDate @bind-Value="approval.JoiningDate" /></div>
+                            </div>
+                            <div class="actions"><button class="button primary compact" type="submit">Approve and add tenant</button><button class="button outline compact" type="button" @onclick="CancelApproval">Cancel</button></div>
+                        </EditForm>
+                    }
+                    else
+                    {
+                        <div class="actions"><button class="button primary compact" @onclick="() => StartApproval(application)">Allocate room</button><button class="button danger compact" @onclick='() => SetStatusAsync(application.Id, "rejected")'>Reject</button></div>
+                    }
+                }
+            </article>
+        }
+    </div>
+}
+
+@code {
+    private List<TenantApplication> applications = [];
+    private List<Room> rooms = [];
+    private List<Bed> beds = [];
+    private TenantApplicationApprovalForm approval = new();
+    private string search = string.Empty;
+    private string status = "pending";
+    private string? message;
+    private string? error;
+
+    private IEnumerable<TenantApplication> Filtered => applications.Where(item => (status == "all" || item.Status == status) && (string.IsNullOrWhiteSpace(search) || $"{item.FullName} {item.Phone} {item.ApplicationNumber}".Contains(search, StringComparison.OrdinalIgnoreCase)));
+    private IEnumerable<Bed> AvailableBeds => beds.Where(item => item.Status == "available" && (approval.RoomId == Guid.Empty || item.RoomId == approval.RoomId));
+
+    protected override async Task OnInitializedAsync() => await ReloadAsync();
+
+    private async Task ReloadAsync()
+    {
+        applications = await Repository.GetTenantApplicationsAsync();
+        rooms = await Repository.GetRoomsAsync();
+        beds = await Repository.GetBedsAsync();
+    }
+
+    private void StartApproval(TenantApplication application)
+    {
+        var room = rooms.FirstOrDefault(item => item.Id == application.PreferredRoomId && item.Status == "active" && item.Beds.Any(bed => bed.Status == "available"))
+            ?? rooms.FirstOrDefault(item => item.Status == "active" && item.RoomType == application.PreferredRoomType && item.Beds.Any(bed => bed.Status == "available"));
+        var bed = beds.FirstOrDefault(item => item.Id == application.PreferredBedId && item.Status == "available" && item.RoomId == room?.Id)
+            ?? beds.FirstOrDefault(item => item.Status == "available" && item.RoomId == room?.Id);
+        approval = new TenantApplicationApprovalForm { ApplicationId = application.Id, RoomId = room?.Id ?? Guid.Empty, BedId = bed?.Id, MonthlyRent = room?.MonthlyRent ?? application.RoomPrice, SecurityDepositAmount = room?.MonthlyRent ?? application.RoomPrice, NoticePeriodDays = 30 };
+    }
+
+    private void CancelApproval() => approval = new TenantApplicationApprovalForm();
+
+    private async Task ApproveAsync()
+    {
+        error = null;
+        try
+        {
+            var tenant = await Repository.ApproveTenantApplicationAsync(approval, await ActorAsync());
+            message = $"{tenant.FullName} was added. The security-deposit invoice must be paid before hostel fees are generated.";
+            approval = new TenantApplicationApprovalForm();
+            await ReloadAsync();
+        }
+        catch (InvalidOperationException exception) { error = exception.Message; }
+    }
+
+    private async Task SetStatusAsync(Guid id, string value)
+    {
+        await Repository.UpdateTenantApplicationStatusAsync(id, value, await ActorAsync());
+        await ReloadAsync();
+    }
+
+    private async Task<string> ActorAsync() => (await AuthStateProvider.GetAuthenticationStateAsync()).User.Identity?.Name ?? "admin";
+    private static string Label(string value) => value.Replace("_", " ");
+    private static string Value(string value) => string.IsNullOrWhiteSpace(value) ? "Not provided" : value;
+    private int AvailableCount(string roomType) => rooms.Where(room => room.Status == "active" && room.RoomType == roomType).Sum(room => room.Beds.Count(bed => bed.Status == "available"));
+    private static string Badge(string value) => value switch { "approved" => "success", "rejected" => "danger", _ => "warning" };
+}
