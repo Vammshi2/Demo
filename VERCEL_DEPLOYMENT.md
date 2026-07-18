@@ -69,6 +69,7 @@ Run these commands from `LicenseAuthority/`:
 cd LicenseAuthority
 vercel link
 vercel env add ConnectionStrings__LicenseAuthority production
+vercel env add AuthorityDatabase__RunMigrationsOnStartup production
 vercel env add AdminSetup__BootstrapToken production
 vercel env add DataProtection__KeysPath production
 vercel env add Authority__PublicUrl production
@@ -80,6 +81,7 @@ Use these non-secret values unless your deployment needs different settings:
 
 ```text
 AuthorityDatabase__Provider=postgresql
+AuthorityDatabase__RunMigrationsOnStartup=false
 DataProtection__KeysPath=/tmp/hostelpro-authority/DataProtectionKeys
 AllowedHosts=*
 ```

@@ -18,6 +18,10 @@ var builder = WebApplication.CreateBuilder(args);
 var databaseProvider = builder.Configuration["AuthorityDatabase:Provider"]?.Trim().ToLowerInvariant()
     ?? "postgresql";
 var useDevelopmentSqlite = databaseProvider == "sqlite" && builder.Environment.IsDevelopment();
+var runMigrationsOnStartupSetting = builder.Configuration["AuthorityDatabase:RunMigrationsOnStartup"];
+var runMigrationsOnStartup = string.IsNullOrWhiteSpace(runMigrationsOnStartupSetting)
+    ? builder.Environment.IsDevelopment()
+    : runMigrationsOnStartupSetting.Equals("true", StringComparison.OrdinalIgnoreCase);
 var startupDiagnostics = new StartupDiagnostics();
 var connectionString = builder.Configuration.GetConnectionString("LicenseAuthority");
 if (useDevelopmentSqlite && string.IsNullOrWhiteSpace(connectionString))
@@ -240,10 +244,18 @@ await using (var scope = app.Services.CreateAsyncScope())
         .GetRequiredService<ILoggerFactory>()
         .CreateLogger("HostelPro.LicenseAuthority.Startup");
     startupDiagnostics.DatabaseProvider = useDevelopmentSqlite ? "sqlite" : "postgresql";
+    startupDiagnostics.RunMigrationsOnStartup = runMigrationsOnStartup;
 
     try
     {
-        if (useDevelopmentSqlite)
+        if (!runMigrationsOnStartup)
+        {
+            startupDiagnostics.DatabaseReady = true;
+            startupDiagnostics.LastErrorType = "migration_skipped";
+            startupDiagnostics.LastErrorMessage = "Startup migrations are disabled for this deployment.";
+            logger.LogInformation("License Authority startup migrations are disabled.");
+        }
+        else if (useDevelopmentSqlite)
         {
             await dbContext.Database.EnsureCreatedAsync();
         }
@@ -324,6 +336,7 @@ internal sealed class StartupDiagnostics
 {
     public bool DatabaseReady { get; set; }
     public string DatabaseProvider { get; set; } = string.Empty;
+    public bool RunMigrationsOnStartup { get; set; }
     public DateTimeOffset? LastMigrationUtc { get; set; }
     public string LastErrorType { get; set; } = string.Empty;
     public string LastErrorMessage { get; set; } = string.Empty;

@@ -67,6 +67,7 @@ set_env() {
 
 set_env ConnectionStrings__LicenseAuthority "${connection_string}"
 set_env AuthorityDatabase__Provider "postgresql"
+set_env AuthorityDatabase__RunMigrationsOnStartup "false"
 set_env AdminSetup__BootstrapToken "${bootstrap_token}"
 set_env Authority__PublicUrl "https://hostelpro-authority.vercel.app"
 set_env AllowedHosts "*"
