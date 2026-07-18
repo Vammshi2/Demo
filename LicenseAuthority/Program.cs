@@ -112,6 +112,27 @@ if (!app.Environment.IsDevelopment())
 app.UseHttpsRedirection();
 app.Use(async (context, next) =>
 {
+    try
+    {
+        await next();
+    }
+    catch (Exception exception)
+    {
+        var logger = context.RequestServices
+            .GetRequiredService<ILoggerFactory>()
+            .CreateLogger("HostelPro.LicenseAuthority.Requests");
+        logger.LogError(
+            exception,
+            "Unhandled Authority request failure on {Method} {Path}: {ErrorType} {ErrorMessage}",
+            context.Request.Method,
+            context.Request.Path,
+            exception.GetType().Name,
+            Redact(exception.GetBaseException().Message));
+        throw;
+    }
+});
+app.Use(async (context, next) =>
+{
     var headers = context.Response.Headers;
     headers.XContentTypeOptions = "nosniff";
     headers.XFrameOptions = "DENY";
@@ -183,6 +204,33 @@ app.MapGet("/health/startup", () =>
         startupDiagnostics.LastErrorType,
         startupDiagnostics.LastErrorMessage
     }, statusCode: statusCode);
+}).AllowAnonymous();
+
+app.MapGet("/health/pages", async (
+    LicenseAuthorityDbContext dbContext,
+    Microsoft.Extensions.Options.IOptions<AdminSetupOptions> setupOptions,
+    CancellationToken cancellationToken) =>
+{
+    try
+    {
+        var adminCount = await dbContext.VendorAdmins.CountAsync(cancellationToken);
+        return Results.Ok(new
+        {
+            status = "ready",
+            setupClosed = adminCount > 0,
+            adminCount,
+            bootstrapConfigured = !string.IsNullOrWhiteSpace(setupOptions.Value.BootstrapToken)
+        });
+    }
+    catch (Exception exception)
+    {
+        return Results.Json(new
+        {
+            status = "page_dependency_failed",
+            errorType = exception.GetType().Name,
+            errorMessage = Redact(exception.GetBaseException().Message)
+        }, statusCode: StatusCodes.Status500InternalServerError);
+    }
 }).AllowAnonymous();
 
 await using (var scope = app.Services.CreateAsyncScope())
