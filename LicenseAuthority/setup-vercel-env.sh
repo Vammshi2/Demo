@@ -30,19 +30,39 @@ if [ ! -s "${token_file}" ]; then
 fi
 bootstrap_token="$(cat "${token_file}")"
 
-printf "Enter authority Supabase database password: "
+cat <<'INFO'
+Enter the Authority Supabase pooler connection string.
+
+Use Supabase Dashboard -> Connect -> Session pooler.
+It should look like:
+Host=aws-0-<region>.pooler.supabase.com;Port=5432;Database=postgres;Username=postgres.binfuseppdnakkguwaly;Password=<password>;SSL Mode=Require;Trust Server Certificate=true
+
+Do not use db.binfuseppdnakkguwaly.supabase.co:5432 on Vercel unless the Supabase IPv4 add-on is enabled.
+INFO
+printf "Authority pooler connection string: "
 stty -echo
-IFS= read -r db_password
+IFS= read -r connection_string
 stty echo
 printf "\n"
 
-connection_string="Host=db.binfuseppdnakkguwaly.supabase.co;Port=5432;Database=postgres;Username=postgres;Password=${db_password};SSL Mode=Require;Trust Server Certificate=true"
+case "${connection_string}" in
+  *pooler.supabase.com*)
+    ;;
+  *)
+    echo "Warning: this does not look like a Supabase pooler connection string." >&2
+    echo "Vercel may not reach the direct db.<project>.supabase.co IPv6 endpoint." >&2
+    ;;
+esac
 
 set_env() {
   name="$1"
   value="$2"
-  vercel env rm "${name}" production --yes >/dev/null 2>&1 || true
-  printf "%s\n" "${value}" | vercel env add "${name}" production
+  vercel env rm "${name}" production --yes \
+    --project hostelpro-authority \
+    --scope tvamshikrishna2-gmailcoms-projects >/dev/null 2>&1 || true
+  printf "%s\n" "${value}" | vercel env add "${name}" production \
+    --project hostelpro-authority \
+    --scope tvamshikrishna2-gmailcoms-projects
 }
 
 set_env ConnectionStrings__LicenseAuthority "${connection_string}"
@@ -52,7 +72,9 @@ set_env Authority__PublicUrl "https://hostelpro-authority.vercel.app"
 set_env AllowedHosts "*"
 set_env DataProtection__KeysPath "/tmp/hostelpro-authority/DataProtectionKeys"
 
-vercel deploy --prod --force
+vercel deploy . --prod --force \
+  --project hostelpro-authority \
+  --scope tvamshikrishna2-gmailcoms-projects
 
 printf "\nAuthority setup token file: %s/%s\n" "${script_dir}" "${token_file}"
 printf "Open after deploy: https://hostelpro-authority.vercel.app/setup\n"

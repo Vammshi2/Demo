@@ -84,6 +84,8 @@ DataProtection__KeysPath=/tmp/hostelpro-authority/DataProtectionKeys
 AllowedHosts=*
 ```
 
+For `ConnectionStrings__LicenseAuthority` on Vercel, use the Supabase **Session pooler** connection string, not the direct `db.<project>.supabase.co:5432` string, unless the Supabase IPv4 add-on is enabled. Vercel is IPv4-only for this database connection path.
+
 After the authority deploys, open:
 
 ```text

@@ -18,6 +18,7 @@ var builder = WebApplication.CreateBuilder(args);
 var databaseProvider = builder.Configuration["AuthorityDatabase:Provider"]?.Trim().ToLowerInvariant()
     ?? "postgresql";
 var useDevelopmentSqlite = databaseProvider == "sqlite" && builder.Environment.IsDevelopment();
+var startupDiagnostics = new StartupDiagnostics();
 var connectionString = builder.Configuration.GetConnectionString("LicenseAuthority");
 if (useDevelopmentSqlite && string.IsNullOrWhiteSpace(connectionString))
 {
@@ -40,7 +41,8 @@ builder.Services.AddDbContext<LicenseAuthorityDbContext>(options =>
     }
     else
     {
-        options.UseNpgsql(connectionString);
+        options.UseNpgsql(connectionString, npgsql =>
+            npgsql.EnableRetryOnFailure(5, TimeSpan.FromSeconds(10), null));
     }
 });
 builder.Services.Configure<AdminSetupOptions>(
@@ -168,16 +170,49 @@ app.MapPost("/api/v1/licenses/validate", async (
 
 app.MapRazorPages();
 
+app.MapGet("/health/startup", () =>
+{
+    var statusCode = startupDiagnostics.DatabaseReady
+        ? StatusCodes.Status200OK
+        : StatusCodes.Status503ServiceUnavailable;
+    return Results.Json(new
+    {
+        status = startupDiagnostics.DatabaseReady ? "ready" : "database_unavailable",
+        startupDiagnostics.DatabaseProvider,
+        startupDiagnostics.LastMigrationUtc,
+        startupDiagnostics.LastErrorType,
+        startupDiagnostics.LastErrorMessage
+    }, statusCode: statusCode);
+}).AllowAnonymous();
+
 await using (var scope = app.Services.CreateAsyncScope())
 {
     var dbContext = scope.ServiceProvider.GetRequiredService<LicenseAuthorityDbContext>();
-    if (useDevelopmentSqlite)
+    var logger = scope.ServiceProvider
+        .GetRequiredService<ILoggerFactory>()
+        .CreateLogger("HostelPro.LicenseAuthority.Startup");
+    startupDiagnostics.DatabaseProvider = useDevelopmentSqlite ? "sqlite" : "postgresql";
+
+    try
     {
-        await dbContext.Database.EnsureCreatedAsync();
+        if (useDevelopmentSqlite)
+        {
+            await dbContext.Database.EnsureCreatedAsync();
+        }
+        else
+        {
+            await dbContext.Database.MigrateAsync();
+        }
+
+        startupDiagnostics.DatabaseReady = true;
+        startupDiagnostics.LastMigrationUtc = DateTimeOffset.UtcNow;
     }
-    else
+    catch (Exception exception)
     {
-        await dbContext.Database.MigrateAsync();
+        startupDiagnostics.DatabaseReady = false;
+        startupDiagnostics.LastErrorType = exception.GetType().Name;
+        startupDiagnostics.LastErrorMessage = Redact(exception.GetBaseException().Message);
+        logger.LogError(exception, "License Authority database migration failed. The app will keep running for diagnostics.");
     }
 }
 
@@ -223,6 +258,27 @@ static void AddRequired(
     {
         errors[property] = [$"The field cannot exceed {maximumLength} characters."];
     }
+}
+
+static string Redact(string message)
+{
+    if (string.IsNullOrWhiteSpace(message))
+    {
+        return "No error message was provided.";
+    }
+
+    return message
+        .Replace("bLXIJ9NpikuyjpOu", "[redacted]", StringComparison.OrdinalIgnoreCase)
+        .Replace("Password=", "Password=[redacted];", StringComparison.OrdinalIgnoreCase);
+}
+
+internal sealed class StartupDiagnostics
+{
+    public bool DatabaseReady { get; set; }
+    public string DatabaseProvider { get; set; } = string.Empty;
+    public DateTimeOffset? LastMigrationUtc { get; set; }
+    public string LastErrorType { get; set; } = string.Empty;
+    public string LastErrorMessage { get; set; } = string.Empty;
 }
 
 public partial class Program;
