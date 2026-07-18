@@ -1,0 +1,185 @@
+@page "{id:guid}"
+@model HostelPro.LicenseAuthority.Pages.Admin.EditModel
+@{
+    ViewData["Title"] = "Manage license";
+}
+
+<div class="page-header">
+    <div>
+        <p class="eyebrow">@Model.KeyPrefix...</p>
+        <h1>Manage license</h1>
+        <p>Update access state, subscription term, and installation capacity.</p>
+    </div>
+    <a class="button secondary" asp-page="/Admin/Index">Back to licenses</a>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(Model.SuccessMessage))
+{
+    <div class="notice success">@Model.SuccessMessage</div>
+}
+@if (TempData["InstallError"] is string installError)
+{
+    <div class="notice danger">@installError</div>
+}
+
+<form method="post" class="form-panel">
+    <input type="hidden" asp-for="Id" />
+    <div asp-validation-summary="ModelOnly" class="validation"></div>
+    <div class="form-grid">
+        <div>
+            <label asp-for="Input.CustomerName"></label>
+            <input asp-for="Input.CustomerName" />
+            <span asp-validation-for="Input.CustomerName" class="field-error"></span>
+        </div>
+        <div>
+            <label asp-for="Input.ProductCode"></label>
+            <input asp-for="Input.ProductCode" autocapitalize="none" />
+            <span asp-validation-for="Input.ProductCode" class="field-error"></span>
+        </div>
+        <div>
+            <label asp-for="Input.Status"></label>
+            <select asp-for="Input.Status" asp-items="Html.GetEnumSelectList<LicenseStatus>()"></select>
+        </div>
+        <div>
+            <label asp-for="Input.PaidThroughUtc"></label>
+            <input asp-for="Input.PaidThroughUtc" type="datetime-local" />
+            <span asp-validation-for="Input.PaidThroughUtc" class="field-error"></span>
+        </div>
+        <div>
+            <label asp-for="Input.MaxInstallations"></label>
+            <input asp-for="Input.MaxInstallations" min="1" max="1000" />
+            <span asp-validation-for="Input.MaxInstallations" class="field-error"></span>
+        </div>
+        <div class="full-width">
+            <label asp-for="Input.Notes"></label>
+            <textarea asp-for="Input.Notes" rows="4"></textarea>
+            <span asp-validation-for="Input.Notes" class="field-error"></span>
+        </div>
+    </div>
+    <div class="form-actions">
+        <button class="button primary" type="submit">Save changes</button>
+        <a class="button secondary" asp-page="/Admin/Index">Cancel</a>
+    </div>
+</form>
+
+<section class="section-block">
+    <div class="section-heading">
+        <p class="eyebrow">Deployment preparation</p>
+        <h2>Customer application</h2>
+        <p>Enter the deployed application's base URL once. The authority derives the public, administrator login, and tenant application links automatically.</p>
+    </div>
+    <form method="post" asp-page-handler="SaveDeployment" asp-route-id="@Model.Id" class="form-panel">
+        <input type="hidden" asp-for="Id" />
+        <div class="form-grid">
+            <div><label asp-for="Deployment.ApplicationUrl"></label><input asp-for="Deployment.ApplicationUrl" placeholder="https://customer.example.com" /><small>Use the base address only. Do not add /Login or /admin.</small><span asp-validation-for="Deployment.ApplicationUrl" class="field-error"></span></div>
+            <div><label asp-for="Deployment.HostingProvider"></label><select asp-for="Deployment.HostingProvider"><option value="manual">Manual</option><option value="azure">Azure</option><option value="render">Render</option><option value="railway">Railway</option><option value="fly">Fly.io</option></select></div>
+            <div><label asp-for="Deployment.DeploymentRegion"></label><input asp-for="Deployment.DeploymentRegion" placeholder="Central India" /></div>
+            <div><label asp-for="Deployment.DeploymentStatus"></label><select asp-for="Deployment.DeploymentStatus"><option value="not_configured">Not configured</option><option value="ready">Ready</option><option value="deploying">Deploying</option><option value="deployed">Deployed</option><option value="failed">Failed</option></select></div>
+            <div class="full-width"><label asp-for="Deployment.SecretReference"></label><input asp-for="Deployment.SecretReference" placeholder="vault://customer/hostelpro-production" /><small>Optional. Store only a vault or provider reference. Do not paste a password or API key here.</small></div>
+        </div>
+        <div class="form-actions"><button class="button primary" type="submit">Save deployment profile</button></div>
+    </form>
+
+    @if (Model.HasApplicationLinks)
+    {
+        <div class="deployment-links">
+            <div class="section-heading compact-heading">
+                <p class="eyebrow">Generated automatically</p>
+                <h2>Application links</h2>
+                <p>These links are derived from the application base URL and update whenever it changes.</p>
+            </div>
+            <div class="deployment-link-grid">
+                <article class="deployment-link-card"><span>Public application</span><strong>@Model.PublicApplicationUrl</strong><a class="button secondary compact-button" href="@Model.PublicApplicationUrl" target="_blank" rel="noopener noreferrer">Open application</a></article>
+                @if (!string.IsNullOrWhiteSpace(Model.OwnerSetupUrl))
+                {
+                    <article class="deployment-link-card"><span>Owner activation</span><strong>@Model.OwnerSetupUrl</strong><a class="button secondary compact-button" href="@Model.OwnerSetupUrl" target="_blank" rel="noopener noreferrer">Set up owner</a></article>
+                }
+                else
+                {
+                    <article class="deployment-link-card">
+                        <span>Owner activation</span>
+                        <strong>Generate a one-time token when the deployment is ready.</strong>
+                        <form method="post" asp-page-handler="GenerateSetupToken" asp-route-id="@Model.Id">
+                            <button class="button secondary compact-button" type="submit">Generate token</button>
+                        </form>
+                    </article>
+                }
+                <article class="deployment-link-card"><span>Administrator login</span><strong>@Model.AdminLoginUrl</strong><a class="button primary compact-button" href="@Model.AdminLoginUrl" target="_blank" rel="noopener noreferrer">Admin login</a></article>
+                <article class="deployment-link-card"><span>Tenant application</span><strong>@Model.TenantApplicationUrl</strong><a class="button secondary compact-button" href="@Model.TenantApplicationUrl" target="_blank" rel="noopener noreferrer">Open application form</a></article>
+            </div>
+            @if (!string.IsNullOrWhiteSpace(Model.IssuedSetupToken))
+            {
+                <div class="notice warning"><strong>Copy now:</strong> this activation token and link are shown once. Configure the token as <code>Provisioning__SetupToken</code> in the customer deployment before sending the activation link to the owner.</div>
+            }
+            <div class="notice info"><strong>Authentication flow:</strong> the deployment validates its license automatically. The tokenized owner activation link creates the first administrator once; after that it closes and the administrator uses the login link.</div>
+        </div>
+    }
+    else
+    {
+        <div class="notice info deployment-link-empty">Save the deployed application base URL to generate all customer links.</div>
+    }
+    <div class="config-template"><p class="eyebrow">Environment template</p><pre><code>@Model.DeploymentTemplate</code></pre></div>
+</section>
+
+<section class="section-block">
+    <div class="section-heading inline-heading">
+        <div>
+            <p class="eyebrow">Registration history</p>
+            <h2>Installations</h2>
+        </div>
+        <span class="count">@Model.Installations.Count</span>
+    </div>
+    @if (Model.Installations.Count == 0)
+    {
+        <div class="empty-state small">
+            <p>No installation has validated this key.</p>
+        </div>
+    }
+    else
+    {
+        <div class="table-frame">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Host</th>
+                        <th>Installation ID</th>
+                        <th>Version</th>
+                        <th>Last seen</th>
+                        <th>Status</th>
+                        <th><span class="sr-only">Actions</span></th>
+                    </tr>
+                </thead>
+                <tbody>
+                @foreach (var installation in Model.Installations)
+                {
+                    <tr>
+                        <td>@installation.HostName</td>
+                        <td><code>@installation.InstallationId</code></td>
+                        <td>@installation.ApplicationVersion</td>
+                        <td>@installation.LastSeenUtc.ToString("dd MMM yyyy HH:mm 'UTC'")</td>
+                        <td>
+                            <span class="status @(installation.RevokedUtc is null ? "status-active" : "status-suspended")">
+                                @(installation.RevokedUtc is null ? "active" : "revoked")
+                            </span>
+                        </td>
+                        <td class="action-cell">
+                            @if (installation.RevokedUtc is null)
+                            {
+                                <form method="post" asp-page-handler="RevokeInstallation" asp-route-id="@Model.Id" asp-route-installationId="@installation.Id">
+                                    <button class="button danger compact-button" type="submit">Revoke</button>
+                                </form>
+                            }
+                            else
+                            {
+                                <form method="post" asp-page-handler="RestoreInstallation" asp-route-id="@Model.Id" asp-route-installationId="@installation.Id">
+                                    <button class="button secondary compact-button" type="submit">Restore</button>
+                                </form>
+                            }
+                        </td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    }
+</section>

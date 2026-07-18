@@ -1,0 +1,76 @@
+@page
+@model HostelPro.LicenseAuthority.Pages.Admin.IndexModel
+@{
+    ViewData["Title"] = "Licenses";
+}
+
+<div class="page-header">
+    <div>
+        <p class="eyebrow">Customer access</p>
+        <h1>Licenses</h1>
+        <p>Review subscription state, paid-through dates, and installation use.</p>
+    </div>
+    <a class="button primary" asp-page="/Admin/Create">Issue license</a>
+</div>
+
+@if (TempData["StatusMessage"] is string statusMessage)
+{
+    <div class="notice success">@statusMessage</div>
+}
+
+@if (Model.Licenses.Count == 0)
+{
+    <div class="empty-state">
+        <h2>No licenses issued</h2>
+        <p>Issue the first customer key to begin tracking installations.</p>
+    </div>
+}
+else
+{
+    <div class="table-frame">
+        <table>
+            <thead>
+                <tr>
+                    <th>Customer</th>
+                    <th>Key prefix</th>
+                    <th>Status</th>
+                    <th>Paid through</th>
+                    <th>Installations</th>
+                    <th><span class="sr-only">Actions</span></th>
+                </tr>
+            </thead>
+            <tbody>
+            @foreach (var license in Model.Licenses)
+            {
+                <tr>
+                    <td>
+                        <strong>@license.CustomerName</strong>
+                        <span class="subtext">@license.ProductCode</span>
+                    </td>
+                    <td><code>@license.KeyPrefix...</code></td>
+                    <td><span class="status status-@license.Status.ToLowerInvariant()">@license.Status</span></td>
+                    <td>@license.PaidThroughUtc.ToString("dd MMM yyyy HH:mm 'UTC'")</td>
+                    <td>@license.ActiveInstallations / @license.MaxInstallations</td>
+                    <td class="action-cell">
+                        <div class="table-actions">
+                            @if (license.Status is "active" or "trial")
+                            {
+                                <form method="post" asp-page-handler="SetStatus" asp-route-id="@license.Id" asp-route-status="unpaid">
+                                    <button class="button danger compact-button" type="submit">Mark unpaid</button>
+                                </form>
+                            }
+                            else
+                            {
+                                <form method="post" asp-page-handler="SetStatus" asp-route-id="@license.Id" asp-route-status="active">
+                                    <button class="button primary compact-button" type="submit">Activate</button>
+                                </form>
+                            }
+                            <a class="button secondary compact-button" asp-page="/Admin/Edit" asp-route-id="@license.Id">Manage</a>
+                        </div>
+                    </td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    </div>
+}

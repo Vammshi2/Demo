@@ -1,0 +1,69 @@
+@page
+@model HostelPro.LicenseAuthority.Pages.Admin.CreateModel
+@{
+    ViewData["Title"] = "Issue license";
+}
+
+<div class="page-header">
+    <div>
+        <p class="eyebrow">Customer access</p>
+        <h1>Issue license</h1>
+        <p>Create a key for one customer and product.</p>
+    </div>
+    <a class="button secondary" asp-page="/Admin/Index">Back to licenses</a>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(Model.IssuedKey))
+{
+    <section class="issued-key-panel">
+        <p class="eyebrow">Issued successfully</p>
+        <h2>Record this key now</h2>
+        <p>The plaintext key is not stored and cannot be shown again.</p>
+        <div class="issued-key"><code>@Model.IssuedKey</code></div>
+        <h2>Owner activation token</h2>
+        <p>Set this as <code>Provisioning__SetupToken</code> in the customer deployment. It is also shown only once.</p>
+        <div class="issued-key"><code>@Model.IssuedSetupToken</code></div>
+        <a class="button primary" asp-page="/Admin/Index">Done</a>
+    </section>
+}
+else
+{
+    <form method="post" class="form-panel">
+        <div asp-validation-summary="ModelOnly" class="validation"></div>
+        <div class="form-grid">
+            <div>
+                <label asp-for="Input.CustomerName"></label>
+                <input asp-for="Input.CustomerName" />
+                <span asp-validation-for="Input.CustomerName" class="field-error"></span>
+            </div>
+            <div>
+                <label asp-for="Input.ProductCode"></label>
+                <input asp-for="Input.ProductCode" autocapitalize="none" />
+                <span asp-validation-for="Input.ProductCode" class="field-error"></span>
+            </div>
+            <div>
+                <label asp-for="Input.Status"></label>
+                <select asp-for="Input.Status" asp-items="Html.GetEnumSelectList<LicenseStatus>()"></select>
+            </div>
+            <div>
+                <label asp-for="Input.PaidThroughUtc"></label>
+                <input asp-for="Input.PaidThroughUtc" type="datetime-local" />
+                <span asp-validation-for="Input.PaidThroughUtc" class="field-error"></span>
+            </div>
+            <div>
+                <label asp-for="Input.MaxInstallations"></label>
+                <input asp-for="Input.MaxInstallations" min="1" max="1000" />
+                <span asp-validation-for="Input.MaxInstallations" class="field-error"></span>
+            </div>
+            <div class="full-width">
+                <label asp-for="Input.Notes"></label>
+                <textarea asp-for="Input.Notes" rows="4"></textarea>
+                <span asp-validation-for="Input.Notes" class="field-error"></span>
+            </div>
+        </div>
+        <div class="form-actions">
+            <button class="button primary" type="submit">Issue license</button>
+            <a class="button secondary" asp-page="/Admin/Index">Cancel</a>
+        </div>
+    </form>
+}

@@ -1,0 +1,35 @@
+@page
+@model HostelPro.LicenseAuthority.Pages.SetupModel
+@{
+    ViewData["Title"] = "Initial setup";
+}
+
+<section class="auth-panel setup-panel">
+    <div class="section-heading compact">
+        <p class="eyebrow">First run</p>
+        <h1>Create the vendor administrator</h1>
+        <p>This page is permanently disabled after the first account is created.</p>
+    </div>
+    @if (!Model.BootstrapConfigured)
+    {
+        <div class="notice danger">
+            Configure <code>AdminSetup__BootstrapToken</code> before creating the first administrator.
+        </div>
+    }
+    <form method="post" class="form-stack">
+        <div asp-validation-summary="ModelOnly" class="validation"></div>
+        <label asp-for="Input.Email"></label>
+        <input asp-for="Input.Email" autocomplete="username" />
+        <span asp-validation-for="Input.Email" class="field-error"></span>
+        <label asp-for="Input.Password"></label>
+        <input asp-for="Input.Password" autocomplete="new-password" />
+        <span asp-validation-for="Input.Password" class="field-error"></span>
+        <label asp-for="Input.ConfirmPassword"></label>
+        <input asp-for="Input.ConfirmPassword" autocomplete="new-password" />
+        <span asp-validation-for="Input.ConfirmPassword" class="field-error"></span>
+        <label asp-for="Input.BootstrapToken"></label>
+        <input asp-for="Input.BootstrapToken" autocomplete="off" />
+        <span asp-validation-for="Input.BootstrapToken" class="field-error"></span>
+        <button class="button primary" type="submit" disabled="@(!Model.BootstrapConfigured)">Create administrator</button>
+    </form>
+</section>

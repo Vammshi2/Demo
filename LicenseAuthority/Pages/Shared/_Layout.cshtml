@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light" />
+    <title>@ViewData["Title"] - HostelPro License Authority</title>
+    <link rel="stylesheet" href="~/css/site.css" asp-append-version="true" />
+</head>
+<body>
+    <header class="topbar">
+        <div class="shell topbar-inner">
+            <a class="brand" asp-page="/Index" aria-label="HostelPro License Authority home">
+                <span class="brand-mark" aria-hidden="true">HP</span>
+                <span>License Authority</span>
+            </a>
+            @if (User.Identity?.IsAuthenticated == true)
+            {
+                <nav class="nav" aria-label="Vendor navigation">
+                    <a asp-page="/Admin/Index">Licenses</a>
+                    <a asp-page="/Admin/Create">Issue license</a>
+                    <form method="post" asp-page="/Logout">
+                        <button class="link-button" type="submit">Sign out</button>
+                    </form>
+                </nav>
+            }
+        </div>
+    </header>
+    <main class="shell page">
+        @RenderBody()
+    </main>
+</body>
+</html>

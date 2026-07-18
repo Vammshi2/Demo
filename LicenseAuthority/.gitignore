@@ -1,0 +1,3 @@
+.vercel
+.env*
+.authority-bootstrap-token.txt
